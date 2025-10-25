@@ -1,0 +1,17 @@
+db.sqlite3
+
+
+# Migration files
+Paymagics_Admin/migrations/*.py
+Paymagics_Admin/migrations/__pycache__/*.pyc
+
+Paymagics_Payor/migrations/*.py
+Paymagics_Payor/migrations/__pycache__/*.pyc
+
+Paymagics_PayorStaff/migrations/*.py
+Paymagics_PayorStaff/migrations/__pycache__/*.pyc
+
+Bank/migrations/*.py
+Bank/migrations/__pycache__/*.pyc
+
+.env
