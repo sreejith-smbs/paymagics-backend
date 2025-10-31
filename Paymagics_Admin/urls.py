@@ -10,6 +10,10 @@ urlpatterns = [
     # Authentication & Signup
     path("signup/", views.signup, name="signup"),
     
+     # profile section
+    path("profile/view/", views.get_profile, name="view_profile"),
+    path("profile/edit/", views.update_profile, name="update_profile"),
+    
     path("search/payors/", views.search_payors, name="search_payors"),
     path("search/payor-staff/", views.search_payor_staff, name="search_payor_staff"),
     

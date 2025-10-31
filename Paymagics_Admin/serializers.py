@@ -18,6 +18,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "role",
             "created_at",
             "updated_at",
+            "referral_code"
         ]
         read_only_fields = ("id", "role")
 

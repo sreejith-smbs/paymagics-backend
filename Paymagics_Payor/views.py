@@ -1,5 +1,5 @@
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from .serializers import *
 from .models import *
@@ -91,63 +91,96 @@ def create_or_update_category(request):
     }, status=status.HTTP_200_OK)
 
 
+#create payee
 @api_view(["POST"])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
 def create_payee(request):
     serializer = CreatePayeeSerializer(data=request.data)
-    
-    if serializer.is_valid():
-        data = serializer.validated_data
-        payee_type = data["payee_type"]
-
-        # Generate referral code
-        referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-        # Get UserProfile of the logged-in user
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # Generate referral code
+    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+ 
+    # Identify the user making the request
+    user = request.user
+    role = None
+    try:
+        user_profile = UserProfile.objects.get(user=user)
+        role = user_profile.role
+    except UserProfile.DoesNotExist:
+        return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+ 
+    # Determine which payor this payee should belong to
+    payor = None
+ 
+    # --- Admin privilege ---
+    if user.is_superuser or user.is_staff:
+        payor_id = request.data.get("payor_id")
+ 
+        if payor_id:
+            try:
+                payor = UserProfile.objects.get(id=payor_id)
+            except UserProfile.DoesNotExist:
+                return Response({'error': 'Invalid payor_id provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            # Default to admin's own profile if no payor_id is given
+            try:
+                payor = UserProfile.objects.get(user=user)
+            except UserProfile.DoesNotExist:
+                return Response({'error': 'Admin profile not found.'}, status=status.HTTP_404_NOT_FOUND)
+ 
+ 
+    # --- Payor creating their own payee ---
+    elif role == "PAYOR":
+        payor = user_profile
+ 
+    # --- Advisor privilege (optional) ---
+    elif role == "ADVISOR":
+        payor_id = request.data.get("payor_id")
+        if not payor_id:
+            return Response({'error': 'Advisor must specify a payor_id to create payee.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            payor = UserProfile.objects.get(user=request.user)
+            payor = UserProfile.objects.get(id=payor_id)
         except UserProfile.DoesNotExist:
-            return Response({'error': 'Associated payor profile not found.'}, status=400)
-
-        # Get category
-        category_id = data.get("category")
-        try:
-            category = Category.objects.get(id=category_id)
-        except Category.DoesNotExist:
-            return Response({'error': 'Invalid category ID.'}, status=400)
-
-        # Create Payee
-        payee = Payee.objects.create(
-            ben_code=data["ben_code"],
-            ben_name=data["ben_name"],
-            add1=data["add1"],
-            add2=data["add2"],
-            city=data["city"],
-            state=data["state"],
-            zipcode=data["zipcode"],
-            contact=data["contact"],
-            email=data["email"],
-            acc_no=data.get("acc_no"),
-            ifsc=data.get("ifsc"),
-            iban=data.get("iban"),
-            swift_code=data.get("swift_code"),
-            sort_code=data.get("sort_code"),
-            bank_name=data.get("bank_name"),
-            branch=data.get("branch"),
-            bank_account_type=data.get("bank_account_type"),
-            referralcode=referral_code,
-            payee_type=payee_type,
-            payor=payor
-        )
-        payee.categories.add(category)
-        category.count += 1
-        category.save()
-
-        return Response(PayeeSerializer(payee).data, status=201)
-    
-    return Response(serializer.errors, status=400)
-
-
+            return Response({'error': 'Invalid payor_id provided.'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    else:
+        return Response({'error': 'You do not have permission to create a payee.'}, status=status.HTTP_403_FORBIDDEN)
+ 
+    # Get category
+    category_id = serializer.validated_data.get("category")
+    try:
+        category = Category.objects.get(id=category_id)
+    except Category.DoesNotExist:
+        return Response({'error': 'Invalid category ID.'}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    # Create Payee
+    payee = Payee.objects.create(
+        ben_code=serializer.validated_data["ben_code"],
+        ben_name=serializer.validated_data["ben_name"],
+        add1=serializer.validated_data["add1"],
+        add2=serializer.validated_data["add2"],
+        city=serializer.validated_data["city"],
+        state=serializer.validated_data["state"],
+        zipcode=serializer.validated_data["zipcode"],
+        contact=serializer.validated_data["contact"],
+        email=serializer.validated_data["email"],
+        acc_no=serializer.validated_data.get("acc_no"),
+        ifsc=serializer.validated_data.get("ifsc"),
+        bank_name=serializer.validated_data.get("bank_name"),
+        branch=serializer.validated_data.get("branch"),
+        bank_account_type=serializer.validated_data.get("bank_account_type"),
+        referralcode=referral_code,
+        payor=payor
+    )
+ 
+    # Add category and update count
+    payee.categories.add(category)
+    category.count += 1
+    category.save()
+ 
+    return Response(PayeeSerializer(payee).data, status=status.HTTP_201_CREATED)
 #edit payee
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
@@ -368,88 +401,175 @@ def export_payees_excel(request, template_id):
 
 
 
-#referrel
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def send_invitation(request):
-    try:
-        payor_profile = UserProfile.objects.get(user=request.user)
-    except UserProfile.DoesNotExist:
-        return Response({"error": "Payor profile not found."}, status=400)
+# #referrel
+# @api_view(["POST"])
+# @permission_classes([IsAuthenticated])
+# def send_invitation(request):
+#     try:
+#         payor_profile = UserProfile.objects.get(user=request.user)
+#     except UserProfile.DoesNotExist:
+#         return Response({"error": "Payor profile not found."}, status=400)
 
-    email = request.data.get("email")
-    if not email:
-        return Response({"error": "Payee email is required."}, status=400)
-    email = email.strip().lower()
+#     email = request.data.get("email")
+#     if not email:
+#         return Response({"error": "Payee email is required."}, status=400)
+#     email = email.strip().lower()
 
-    if email == payor_profile.user.email.lower():
-        return Response({"error": "You cannot invite yourself."}, status=400)
+#     if email == payor_profile.user.email.lower():
+#         return Response({"error": "You cannot invite yourself."}, status=400)
 
-    try:
-        payee = Payee.objects.get(email=email, is_active=True)
-    except Payee.DoesNotExist:
-        return Response({"error": "Payee not found."}, status=400)
+#     try:
+#         payee = Payee.objects.get(email=email, is_active=True)
+#     except Payee.DoesNotExist:
+#         return Response({"error": "Payee not found."}, status=400)
 
-    invite, created = ReferralInvite.objects.get_or_create(
-        payor=payor_profile,
-        payee_email=email,
-        defaults={
-            "status": "pending",
-            "referral_code": str(uuid.uuid4())
-        }
-    )
+#     invite, created = ReferralInvite.objects.get_or_create(
+#         payor=payor_profile,
+#         payee_email=email,
+#         defaults={
+#             "status": "pending",
+#             "referral_code": str(uuid.uuid4())
+#         }
+#     )
 
-    if created:
-        invite_link = request.build_absolute_uri(f"{invite.referral_code}/complete/")
+#     if created:
+#         invite_link = request.build_absolute_uri(f"{invite.referral_code}/complete/")
 
 
-        send_mail(
-            subject="You've been invited!",
-            message=f"Complete your profile here: {invite_link}",
-            from_email=payor_profile.user.email,
-            recipient_list=[email],
-            fail_silently=False
-        )
+#         send_mail(
+#             subject="You've been invited!",
+#             message=f"Complete your profile here: {invite_link}",
+#             from_email=payor_profile.user.email,
+#             recipient_list=[email],
+#             fail_silently=False
+#         )
 
-        return Response({"message": f"Invitation sent to {email}",
-                         "referral_code":f"{invite.referral_code}"}, status=200)
-    else:
-        return Response({"message": f"Invitation already exists for {email}."}, status=200)
+#         return Response({"message": f"Invitation sent to {email}",
+#                          "referral_code":f"{invite.referral_code}"}, status=200)
+#     else:
+#         return Response({"message": f"Invitation already exists for {email}."}, status=200)
 
 #referrel clicked status conversion
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def referral_details(request, referral_code):
-    invite = get_object_or_404(ReferralInvite, referral_code=referral_code)
-    if invite.status == "pending":
-        invite.status = "clicked"
-        invite.save()
+# @api_view(["GET"])
+# @permission_classes([AllowAny])
+# def referral_details(request, referral_code):
+#     invite = get_object_or_404(ReferralInvite, referral_code=referral_code)
+#     if invite.status == "pending":
+#         invite.status = "clicked"
+#         invite.save()
 
-    return Response({
-        "payee_email": invite.payee_email,
-        "status": invite.status
-    })
+#     return Response({
+#         "payee_email": invite.payee_email,
+#         "status": invite.status
+#     })
 
-#referral - update payee profile
+# #referral - update payee profile
+# @api_view(["POST"])
+# @permission_classes([AllowAny])
+# def complete_payee_profile(request, referral_code):
+#     invite = get_object_or_404(ReferralInvite, referral_code=referral_code)
+
+#     try:
+#         payee = Payee.objects.get(email=invite.payee_email)
+#     except Payee.DoesNotExist:
+#         return Response({"error": "Payee profile not found."}, status=404)
+
+#     serializer = UpdatePayeeSerializer(payee, data=request.data, partial=True)
+
+#     if serializer.is_valid():
+#         serializer.save()
+#         invite.status = "completed"
+#         invite.save()
+#         return Response({"message": "Profile updated successfully."})
+
+#     return Response(serializer.errors, status=400)
+
+
+from django.db import transaction
+
+
+def generate_unique_ben_code():
+    """Generate a unique 8-character beneficiary code."""
+    while True:
+        ben_code = "BEN" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        if not Payee.objects.filter(ben_code=ben_code).exists():
+            return ben_code
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
-def complete_payee_profile(request, referral_code):
-    invite = get_object_or_404(ReferralInvite, referral_code=referral_code)
+@transaction.atomic
+def create_payee_via_referral(request, referral_code):
+    """
+    Public API — Create a Payee using an existing Payor's referral code (no authentication).
+    - ben_code is always auto-generated
+    - Validates banking fields based on payee_type
+    - No category handling
+    """
+    serializer = CreatePayeeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
 
-    try:
-        payee = Payee.objects.get(email=invite.payee_email)
-    except Payee.DoesNotExist:
-        return Response({"error": "Payee profile not found."}, status=404)
+    data = serializer.validated_data
+    payee_type = data.get("payee_type")
 
-    serializer = UpdatePayeeSerializer(payee, data=request.data, partial=True)
+    #  Find payor by referral code
+    payor = get_object_or_404(UserProfile, referral_code=referral_code)
 
-    if serializer.is_valid():
-        serializer.save()
-        invite.status = "completed"
-        invite.save()
-        return Response({"message": "Profile updated successfully."})
+    #  Always auto-generate ben_code
+    ben_code = generate_unique_ben_code()
 
-    return Response(serializer.errors, status=400)
+    #  Generate new referral code for payee
+    referral_code_new = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    #  Validate banking fields
+    acc_no = data.get("acc_no")
+    ifsc = data.get("ifsc")
+    iban = data.get("iban")
+    swift_code = data.get("swift_code")
+    sort_code = data.get("sort_code")
+
+    if payee_type == "Domestic":
+        if not acc_no or not ifsc:
+            return Response(
+                {"error": "For Domestic payees, both 'acc_no' and 'ifsc' are required."},
+                status=400
+            )
+    elif payee_type == "INTERNATIONAL":
+        if not iban or not swift_code:
+            return Response(
+                {"error": "For International payees, both 'iban' and 'swift_code' are required."},
+                status=400
+            )
+    else:
+        return Response({"error": "Invalid payee_type. (Use : Domestic/International)"}, status=400)
+
+    # Create Payee
+    payee = Payee.objects.create(
+        ben_code=ben_code,
+        ben_name=data["ben_name"],
+        add1=data.get("add1"),
+        add2=data.get("add2"),
+        city=data.get("city"),
+        state=data.get("state"),
+        zipcode=data.get("zipcode"),
+        contact=data.get("contact"),
+        email=data.get("email"),
+        acc_no=acc_no,
+        ifsc=ifsc,
+        iban=iban,
+        swift_code=swift_code,
+        sort_code=sort_code,
+        bank_name=data.get("bank_name"),
+        branch=data.get("branch"),
+        bank_account_type=data.get("bank_account_type"),
+        referralcode=referral_code_new,
+        payee_type=payee_type,
+        payor=payor
+    )
+
+    return Response(PayeeSerializer(payee).data, status=201)
+
 
 
 

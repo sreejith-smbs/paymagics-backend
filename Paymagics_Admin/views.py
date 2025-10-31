@@ -561,3 +561,33 @@ def search_payor_staff(request):
 
     serializer = UserProfileSerializer(users, many=True)
     return Response(serializer.data)
+
+
+# ---------------------------- PROFILE ------------------------
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_profile(request):
+    try:
+        profile = UserProfile.objects.get(user=request.user)
+    except UserProfile.DoesNotExist:
+        return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
+ 
+    serializer = UserProfileSerializer(profile)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+ 
+ 
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def update_profile(request):
+    try:
+        profile = UserProfile.objects.get(user=request.user)
+    except UserProfile.DoesNotExist:
+        return Response({"error": "Profile not found"}, status=status.HTTP_404_NOT_FOUND)
+ 
+    serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+ 
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+ 
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
