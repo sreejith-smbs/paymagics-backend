@@ -231,8 +231,8 @@ def delete_payee(request, pk):
     except UserProfile.DoesNotExist:
         return Response({'error': 'Payor profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if payee.payor != payor:
-        return Response({'error': 'You are not authorized to delete this payee.'}, status=status.HTTP_403_FORBIDDEN)
+    # if payee.payor != payor:
+    #     return Response({'error': 'You are not authorized to delete this payee.'}, status=status.HTTP_403_FORBIDDEN)
 
     #  Soft delete
     payee.is_active = False
