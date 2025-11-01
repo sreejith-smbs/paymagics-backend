@@ -7,10 +7,10 @@ class PayeeSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class UpdatePayeeSerializer(serializers.ModelSerializer):
-    ben_code = serializers.CharField(read_only=True)       
-    referralcode = serializers.CharField(read_only=True)   
-    payor = serializers.PrimaryKeyRelatedField(read_only=True)  
-    categories = serializers.PrimaryKeyRelatedField(many=True, read_only=True) 
+    ben_code = serializers.CharField(read_only=True)
+    referralcode = serializers.CharField(read_only=True)
+    payor = serializers.PrimaryKeyRelatedField(read_only=True)
+    categories = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
 
     class Meta:
         model = Payee
@@ -47,7 +47,7 @@ class CreatePayeeSerializer(serializers.Serializer):
     def validate(self, data):
         payee_type = data.get('payee_type')
 
-        if payee_type == 'International':
+        if payee_type == 'INTERNATIONAL':
             required_fields = ['iban', 'swift_code', 'sort_code']
             missing = [field for field in required_fields if not data.get(field)]
             if missing:
@@ -55,7 +55,7 @@ class CreatePayeeSerializer(serializers.Serializer):
                     f"Missing fields for International payee: {', '.join(missing)}"
                 )
 
-        elif payee_type == 'Domestic':
+        elif payee_type == 'DOMESTIC':
             required_fields = ['acc_no', 'ifsc']
             missing = [field for field in required_fields if not data.get(field)]
             if missing:
@@ -68,5 +68,6 @@ class CreatePayeeSerializer(serializers.Serializer):
             )
 
         return data
+    
 
 

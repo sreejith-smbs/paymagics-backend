@@ -13,6 +13,7 @@ urlpatterns = [
     path('create_edit_list/', create_or_update_category, name='create_edit_list'),
     path('view_lists/', view_list, name='view_list'),
     path('delete_list/<int:pk>/', delete_categ, name='delete_list'),
+    path('remove_from_list/', remove_payee_from_category, name='remove_from_list'),
     path("payees_in_list/<int:category>/", payees_in_list, name="payees_in_list"),
     
     #payee excel

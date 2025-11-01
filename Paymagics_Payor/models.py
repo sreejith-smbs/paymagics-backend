@@ -5,6 +5,7 @@ from Paymagics_PayorStaff.models import *
 
 class Category(models.Model):
     category = models.CharField(max_length=55, unique=True)
+    description = models.CharField(max_length=500,blank=True,null=True)
     count = models.IntegerField(default=0)
 
     def __str__(self):
