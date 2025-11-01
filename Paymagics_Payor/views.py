@@ -29,18 +29,19 @@ from openpyxl.styles import Font
 def create_or_update_category(request):
     category_input = request.data.get("category")         
     new_category_name = request.data.get("new_name")      
-    payee_id = request.data.get("payee")             
+    payee_ids = request.data.get("payees")  # expecting a list of IDs
+    description = request.data.get("description")  # optional
 
-    if not category_input and not payee_id:
+    if not category_input and not payee_ids:
         return Response(
-            {"error": "Provide at least a category (name or ID) or a payee ID."},
+            {"error": "Provide at least a category (name or ID) or payee IDs."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
     category = None
     message = ""
 
-    # Try interpreting category as ID
+    # Fetch category by ID or name
     try:
         category_id = int(category_input)
         category = Category.objects.filter(id=category_id).first()
@@ -48,44 +49,55 @@ def create_or_update_category(request):
             return Response({"error": "Category with this ID not found."}, status=status.HTTP_404_NOT_FOUND)
         message = "Category found by ID."
     except (TypeError, ValueError):
-        # Not an integer, treat as category name (create or fetch)
         category_name = category_input
         category = Category.objects.filter(category__iexact=category_name).first()
         if not category:
-            # Create new category with count 0
-            category = Category.objects.create(category=category_name, count=0)
+            category = Category.objects.create(category=category_name, description=description or "", count=0)
             message = "New category created."
         else:
-            message = "Category exists."
+            if description:
+                category.description = description
+                category.save()
+                message = "Category exists. Description updated."
+            else:
+                message = "Category exists."
 
     # Rename if new_name provided
     if new_category_name:
         if Category.objects.filter(category__iexact=new_category_name).exclude(id=category.id).exists():
             return Response({"error": "A category with the new name already exists."}, status=status.HTTP_400_BAD_REQUEST)
-
         old_name = category.category
         category.category = new_category_name
         category.save()
         message += f" Renamed from '{old_name}' to '{new_category_name}'."
 
     # Handle payee-category linking
-    if payee_id:
-        try:
-            payee = Payee.objects.get(id=payee_id, is_active=True)
-        except Payee.DoesNotExist:
-            return Response({"error": "Payee not found."}, status=status.HTTP_404_NOT_FOUND)
+    newly_assigned_count = 0
+    if payee_ids:
+        if not isinstance(payee_ids, list):
+            return Response({"error": "Payees must be a list of IDs."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not payee.categories.filter(id=category.id).exists():
-            payee.categories.add(category)
-            category.count += 1
+        for payee_id in payee_ids:
+            try:
+                payee = Payee.objects.get(id=payee_id, is_active=True)
+            except Payee.DoesNotExist:
+                return Response({"error": f"Payee with ID {payee_id} not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+
+            if not payee.categories.filter(id=category.id).exists():
+                payee.categories.add(category)
+                newly_assigned_count += 1
+
+        if newly_assigned_count > 0:
+            category.count += newly_assigned_count
             category.save()
-            message += " Category assigned to payee and count incremented."
+            message += f" Category assigned to {newly_assigned_count} payee(s) and count updated."
         else:
-            message += " Category already assigned to this payee."
+            message += " Category already assigned to all provided payees."
 
     return Response({
         "id": category.id,
         "category": category.category,
+        "description": category.description,
         "count": category.count,
         "message": message
     }, status=status.HTTP_200_OK)
@@ -98,64 +110,18 @@ def create_payee(request):
     serializer = CreatePayeeSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
- 
+
     # Generate referral code
     referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
- 
-    # Identify the user making the request
+
+    # Get the user creating the payee
     user = request.user
-    role = None
     try:
-        user_profile = UserProfile.objects.get(user=user)
-        role = user_profile.role
+        payor = UserProfile.objects.get(user=user)
     except UserProfile.DoesNotExist:
         return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)
- 
-    # Determine which payor this payee should belong to
-    payor = None
- 
-    # --- Admin privilege ---
-    if user.is_superuser or user.is_staff:
-        payor_id = request.data.get("payor_id")
- 
-        if payor_id:
-            try:
-                payor = UserProfile.objects.get(id=payor_id)
-            except UserProfile.DoesNotExist:
-                return Response({'error': 'Invalid payor_id provided.'}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            # Default to admin's own profile if no payor_id is given
-            try:
-                payor = UserProfile.objects.get(user=user)
-            except UserProfile.DoesNotExist:
-                return Response({'error': 'Admin profile not found.'}, status=status.HTTP_404_NOT_FOUND)
- 
- 
-    # --- Payor creating their own payee ---
-    elif role == "PAYOR":
-        payor = user_profile
- 
-    # --- Advisor privilege (optional) ---
-    elif role == "ADVISOR":
-        payor_id = request.data.get("payor_id")
-        if not payor_id:
-            return Response({'error': 'Advisor must specify a payor_id to create payee.'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            payor = UserProfile.objects.get(id=payor_id)
-        except UserProfile.DoesNotExist:
-            return Response({'error': 'Invalid payor_id provided.'}, status=status.HTTP_400_BAD_REQUEST)
- 
-    else:
-        return Response({'error': 'You do not have permission to create a payee.'}, status=status.HTTP_403_FORBIDDEN)
- 
-    # Get category
-    category_id = serializer.validated_data.get("category")
-    try:
-        category = Category.objects.get(id=category_id)
-    except Category.DoesNotExist:
-        return Response({'error': 'Invalid category ID.'}, status=status.HTTP_400_BAD_REQUEST)
- 
-    # Create Payee
+
+    # Create the payee
     payee = Payee.objects.create(
         ben_code=serializer.validated_data["ben_code"],
         ben_name=serializer.validated_data["ben_name"],
@@ -174,13 +140,29 @@ def create_payee(request):
         referralcode=referral_code,
         payor=payor
     )
- 
-    # Add category and update count
-    payee.categories.add(category)
-    category.count += 1
-    category.save()
- 
+
+    # Handle a single category (by ID or name)
+    category_input = request.data.get("category")
+    if category_input:
+        # If numeric, treat as ID
+        if isinstance(category_input, int) or str(category_input).isdigit():
+            category = Category.objects.filter(id=int(category_input)).first()
+            if not category:
+                return Response({'error': 'Category not found.'}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            # Treat as name
+            category, created = Category.objects.get_or_create(category=category_input, defaults={'count': 0})
+
+        # Assign category to payee
+        if not payee.categories.filter(id=category.id).exists():
+            payee.categories.add(category)
+
+        # Update count based on active payees in this category
+        category.count = Payee.objects.filter(categories=category, is_active=True).count()
+        category.save()
+
     return Response(PayeeSerializer(payee).data, status=status.HTTP_201_CREATED)
+
 #edit payee
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
@@ -191,27 +173,96 @@ def edit_payee(request, pk):
             status=status.HTTP_400_BAD_REQUEST
         )
 
+    # --- Fetch payee ---
     try:
         payee = Payee.objects.get(pk=pk)
     except Payee.DoesNotExist:
         return Response({'error': 'Payee not found.'}, status=status.HTTP_404_NOT_FOUND)
 
+    # --- Validate user ---
     try:
-        UserProfile.objects.get(user=request.user)  # just to confirm payor exists
+        user_profile = UserProfile.objects.get(user=request.user)
     except UserProfile.DoesNotExist:
-        return Response({'error': 'Payor profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'User profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
     serializer = UpdatePayeeSerializer(instance=payee, data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    if serializer.is_valid():
-        for attr, value in serializer.validated_data.items():
-            if attr != 'categories':  
-                setattr(payee, attr, value)
+    validated_data = serializer.validated_data
 
-        payee.save()
-        return Response(PayeeSerializer(payee).data, status=status.HTTP_200_OK)
+    # --- Handle payee type validation and cleanup ---
+    payee_type = validated_data.get('payee_type', payee.payee_type)
 
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    if payee_type == 'INTERNATIONAL':
+        required_fields = ['iban', 'swift_code', 'sort_code']
+        missing = [f for f in required_fields if not validated_data.get(f) and not getattr(payee, f)]
+        if missing:
+            return Response(
+                {'error': f"Missing fields for INTERNATIONAL payee: {', '.join(missing)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        payee.acc_no = None
+        payee.ifsc = None
+
+    elif payee_type == 'DOMESTIC':
+        required_fields = ['acc_no', 'ifsc']
+        missing = [f for f in required_fields if not validated_data.get(f) and not getattr(payee, f)]
+        if missing:
+            return Response(
+                {'error': f"Missing fields for DOMESTIC payee: {', '.join(missing)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        payee.iban = None
+        payee.swift_code = None
+        payee.sort_code = None
+
+    else:
+        return Response(
+            {'error': "Invalid payee_type. Must be 'DOMESTIC' or 'INTERNATIONAL'."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # --- Handle category update (only one category allowed) ---
+    category_data = request.data.get("category")
+    if category_data is not None:
+        # Determine category (can be ID or name)
+        if isinstance(category_data, int) or str(category_data).isdigit():
+            try:
+                category = Category.objects.get(id=category_data)
+            except Category.DoesNotExist:
+                return Response(
+                    {"error": f"Category with ID {category_data} not found."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            category, created = Category.objects.get_or_create(category=category_data)
+            if created:
+                category.count = 0
+                category.save()
+
+        # Adjust counts — remove old ones, add new one
+        old_categories = list(payee.categories.all())
+        for old_cat in old_categories:
+            old_cat.count = max((old_cat.count or 1) - 1, 0)
+            old_cat.save()
+
+        payee.categories.clear()
+        payee.categories.add(category)
+
+        category.count = (category.count or 0) + 1
+        category.save()
+
+    # --- Apply other field updates ---
+    for attr, value in validated_data.items():
+        if attr != 'categories' and attr != 'category':  # handled above
+            setattr(payee, attr, value)
+
+    payee.save()
+
+    return Response(PayeeSerializer(payee).data, status=status.HTTP_200_OK)
 
 
 #delete payee
@@ -231,14 +282,20 @@ def delete_payee(request, pk):
     except UserProfile.DoesNotExist:
         return Response({'error': 'Payor profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # if payee.payor != payor:
-    #     return Response({'error': 'You are not authorized to delete this payee.'}, status=status.HTTP_403_FORBIDDEN)
+    # Decrement category counts for categories assigned to this payee
+    categories = payee.categories.all()
+    for category in categories:
+        category.count = max((category.count or 1) - 1, 0)  # prevent negative count
+        category.save()
 
-    #  Soft delete
+    # Optional: clear category assignments from payee
+    payee.categories.clear()
+
+    # Soft delete
     payee.is_active = False
     payee.save()
 
-    return Response({'message': 'Payee marked as deleted.'}, status=status.HTTP_200_OK)
+    return Response({'message': 'Payee marked as deleted and category counts updated.'}, status=status.HTTP_200_OK)
 
 
 #view all payee - paginated
@@ -646,3 +703,54 @@ def payment_template_options(request, template_id):
         "template_name": template.name,
         "options": template.options or {},
     })
+
+
+
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def remove_payee_from_category(request):
+    payee_id = request.data.get("payee_id")
+    category_id = request.data.get("category_id")
+
+    # Validate required fields
+    if not payee_id or not category_id:
+        return Response(
+            {"error": "Both 'payee_id' and 'category_id' are required."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Fetch payee
+    try:
+        payee = Payee.objects.get(id=payee_id, is_active=True)
+    except Payee.DoesNotExist:
+        return Response({"error": "Payee not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Fetch category
+    try:
+        category = Category.objects.get(id=category_id)
+    except Category.DoesNotExist:
+        return Response({"error": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Remove relationship if exists
+    if payee.categories.filter(id=category.id).exists():
+        payee.categories.remove(category)
+
+        # Decrease count safely
+        if category.count > 0:
+            category.count -= 1
+            category.save()
+
+        message = f"Category '{category.category}' removed from payee '{payee.ben_name}'."
+    else:
+        message = f"Payee '{payee.ben_name}' is not linked to category '{category.category}'."
+
+    return Response({
+        "payee_id": payee.id,
+        "payee_name": payee.ben_name,
+        "category_id": category.id,
+        "category_name": category.category,
+        "category_count": category.count,
+        "message": message
+    }, status=status.HTTP_200_OK)
