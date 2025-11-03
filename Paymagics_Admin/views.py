@@ -247,29 +247,41 @@ def approve_payor(request, pk):
 def create_payor(request):
     serializer = CreatePayorSerializer(data=request.data)
     if serializer.is_valid():
+        username = serializer.validated_data["username"]
+        email = serializer.validated_data["email"]
+
+        if User.objects.filter(username=username).exists():
+            return Response({"error": "Username already exists."}, status=400)
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "Email already exists."}, status=400)
+
         user = User.objects.create_user(
-            username=serializer.validated_data["username"],
+            username=username,
             password=serializer.validated_data["password"],
-            email=serializer.validated_data["email"],
+            email=email,
             first_name=serializer.validated_data["first_name"],
             last_name=serializer.validated_data["last_name"],
         )
 
         referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        profile = UserProfile.objects.create(
-            user=user,
-            username=user.username,
-            email=user.email,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            mobile=serializer.validated_data["mobile"],
-            role=UserRole.PAYOR,
-            referral_code=referral_code,
-            is_confirmed=True,
-            is_otp_verified=True
-        )
-        return Response(UserProfileSerializer(profile).data, status=201)
-    return Response(serializer.errors, status=400)
+
+        # Safe version
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+
+        profile.username = user.username
+        profile.email = user.email
+        profile.first_name = user.first_name
+        profile.last_name = user.last_name
+        profile.mobile = serializer.validated_data["mobile"]
+        profile.role = UserRole.PAYOR
+        profile.referral_code = referral_code
+        profile.is_confirmed = True
+        profile.is_otp_verified = True
+        profile.save()
+
+        return Response(UserProfileSerializer(profile).data, status=status.HTTP_201_CREATED)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 from rest_framework.pagination import PageNumberPagination
@@ -291,7 +303,6 @@ def list_payors(request):
     serializer = UserProfileSerializer(paginated_queryset, many=True)
 
     return paginator.get_paginated_response(serializer.data)
-
 
 
 
@@ -334,58 +345,42 @@ def delete_payor(request, pk):
 
 # ---------------------- PAYOR STAFF SECTION ----------------------
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminUser])
 def create_payor_staff(request):
     serializer = CreatePayorStaffSerializer(data=request.data)
     if serializer.is_valid():
-        logged_in_user = request.user
+        username = serializer.validated_data["username"]
+        email = serializer.validated_data["email"]
 
-        try:
-            logged_in_profile = UserProfile.objects.get(user=logged_in_user)
-            role = logged_in_profile.role
-        except UserProfile.DoesNotExist:
-            role = "ADMIN"
+        if User.objects.filter(username=username).exists():
+            return Response({"error": "Username already exists."}, status=400)
+        if User.objects.filter(email=email).exists():
+            return Response({"error": "Email already exists."}, status=400)
 
         user = User.objects.create_user(
-            username=serializer.validated_data["username"],
+            username=username,
             password=serializer.validated_data["password"],
-            email=serializer.validated_data["email"],
+            email=email,
             first_name=serializer.validated_data["first_name"],
             last_name=serializer.validated_data["last_name"],
         )
 
-        referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        # Safe way: reuse if signal already created it
+        profile, _ = UserProfile.objects.get_or_create(user=user)
 
-        created_by = None
-        if role == "ADMIN":
-            created_by = None
+        profile.username = user.username
+        profile.email = user.email
+        profile.first_name = user.first_name
+        profile.last_name = user.last_name
+        profile.mobile = serializer.validated_data["mobile"]
+        profile.role = UserRole.PAYOR_STAFF
+        profile.is_confirmed = True
+        profile.is_otp_verified = True
+        profile.save()
 
-        elif role == UserRole.PAYOR:
-            created_by = logged_in_profile
+        return Response(UserProfileSerializer(profile).data, status=status.HTTP_201_CREATED)
 
-        else:
-            return Response(
-                {"error": "Only Admins or Payors can create Payor Staff"},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        profile = UserProfile.objects.create(
-            user=user,
-            username=user.username,
-            email=user.email,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            mobile=serializer.validated_data["mobile"],
-            role=UserRole.PAYOR_STAFF,
-            referral_code=referral_code,
-            created_by=created_by,
-            is_confirmed=True,
-            is_otp_verified=True
-        )
-
-        return Response(UserProfileSerializer(profile).data, status=201)
-
-    return Response(serializer.errors, status=400)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 from rest_framework.pagination import PageNumberPagination
