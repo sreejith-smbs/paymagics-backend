@@ -309,14 +309,17 @@ def delete_payee(request, pk):
 @permission_classes([IsAuthenticated])
 def payee_list(request):
     queryset = Payee.objects.filter(is_active=True)
+    total_count = queryset.count()  # total active payees
 
     paginator = PageNumberPagination()
-    paginator.page_size = 5
-
+    paginator.page_size = 15
     result_page = paginator.paginate_queryset(queryset, request)
     serializer = PayeeSerializer(result_page, many=True)
 
-    return paginator.get_paginated_response(serializer.data)
+    response = paginator.get_paginated_response(serializer.data)
+    response.data["total_count"] = total_count  #  add to paginated response
+    return response
+
 
 
 #single payee view
@@ -337,14 +340,17 @@ def payee_detail(request, pk):
 @permission_classes([IsAuthenticated])
 def view_list(request):
     queryset = Category.objects.all()
+    total_count = queryset.count()  # 👈 total number of categories
 
     paginator = PageNumberPagination()
-    paginator.page_size = 5 
-
+    paginator.page_size = 5
     result_page = paginator.paginate_queryset(queryset, request)
     serializer = CategorySerializer(result_page, many=True)
 
-    return paginator.get_paginated_response(serializer.data)
+    response = paginator.get_paginated_response(serializer.data)
+    response.data["total_count"] = total_count  # 👈 add total count
+    return response
+
 
 
 #delete category
@@ -402,7 +408,7 @@ def export_payees_excel(request, template_id):
     # 👉 If not downloading, return paginated JSON (view mode)
     if not download:
         paginator = PageNumberPagination()
-        paginator.page_size = 5
+        paginator.page_size = 15
         result_page = paginator.paginate_queryset(payees, request)
         serializer = PayeeSerializer(result_page, many=True)
         return paginator.get_paginated_response(serializer.data)
@@ -641,17 +647,21 @@ def create_payee_via_referral(request, referral_code):
 @permission_classes([IsAuthenticated])
 def payees_in_list(request, category):
     payees = Payee.objects.filter(categories__id=category, is_active=True)
+    total_count = payees.count()  # 👈 total number of payees in this category
 
-    if not payees.exists():
+    if total_count == 0:
         return Response({'error': 'No payees found for this category.'}, status=status.HTTP_404_NOT_FOUND)
 
     paginator = PageNumberPagination()
-    paginator.page_size = 5
-
+    paginator.page_size = 15
     result_page = paginator.paginate_queryset(payees, request)
     serializer = PayeeSerializer(result_page, many=True)
 
-    return paginator.get_paginated_response(serializer.data)
+    response = paginator.get_paginated_response(serializer.data)
+    response.data["total_count"] = total_count  # 👈 add total count to response
+
+    return response
+
 
 
 
@@ -709,8 +719,6 @@ def payment_template_options(request, template_id):
         "template_name": template.name,
         "options": template.options or {},
     })
-
-
 
 
 

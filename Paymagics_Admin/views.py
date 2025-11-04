@@ -296,13 +296,18 @@ def list_payors(request):
         is_confirmed=True
     )
 
+    total_count = queryset.count()  # 👈 Get total number of payors
+
     paginator = PageNumberPagination()
-    paginator.page_size = 10  
+    paginator.page_size = 15 
     paginated_queryset = paginator.paginate_queryset(queryset, request)
 
     serializer = UserProfileSerializer(paginated_queryset, many=True)
 
-    return paginator.get_paginated_response(serializer.data)
+    response = paginator.get_paginated_response(serializer.data)
+    response.data["total_count"] = total_count  # 👈 Add total count to response
+    return response
+
 
 
 
@@ -393,13 +398,18 @@ def list_payor_staff(request):
         user__is_active=True
     )
 
+    total_count = queryset.count()  # Get total number of staff
+
     paginator = PageNumberPagination()
     paginator.page_size = 10  
     paginated_queryset = paginator.paginate_queryset(queryset, request)
 
     serializer = UserProfileSerializer(paginated_queryset, many=True)
 
-    return paginator.get_paginated_response(serializer.data)
+    response = paginator.get_paginated_response(serializer.data)
+    response.data["total_count"] = total_count  # Add total count to response
+    return response
+
 
 
 
@@ -503,6 +513,7 @@ def search_categories(request):
     )
     serializer = CategorySerializer(categories, many=True)
     return Response(serializer.data)
+
 
 @api_view(["GET"])
 @permission_classes([AllowAny])

@@ -14,7 +14,7 @@ def view_banks(request):
     banks = Bank.objects.filter(is_active=True)
 
     paginator = PageNumberPagination()
-    paginator.page_size = 10 
+    paginator.page_size = 15
     paginated_banks = paginator.paginate_queryset(banks, request)
 
     serializer = BankSerializer(paginated_banks, many=True)

@@ -16,6 +16,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework.pagination import PageNumberPagination
+import json
 
 
 
@@ -31,12 +32,16 @@ def templates(request):
 
     if request.method == 'GET':
         templates = PaymentTemplate.objects.filter(template_type=template_type)
-        
+        total_count = templates.count()  # 👈 total number of templates of this type
+
         paginator = PageNumberPagination()
-        paginator.page_size = 10  
+        paginator.page_size = 15  
         paginated_templates = paginator.paginate_queryset(templates, request)
         serializer = PaymentTemplateSerializer(paginated_templates, many=True)
-        return paginator.get_paginated_response(serializer.data)
+
+        response = paginator.get_paginated_response(serializer.data)
+        response.data["total_count"] = total_count  # 👈 add total count to response
+        return response
 
     elif request.method == 'POST':
         name = request.data.get("name")
@@ -54,6 +59,7 @@ def templates(request):
             serializer.save(created_by=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
@@ -179,7 +185,13 @@ def download_batch_excel(request, batch_name):
                 value = tp.static_data[h]
             elif tp.options_data and h in tp.options_data:
                 value = tp.options_data[h]
+
+            # Convert lists or dicts to a string before writing
+            if isinstance(value, (list, dict)):
+                value = json.dumps(value)
+
             ws.cell(row=row_num, column=col_num, value=value)
+
 
     for col_num, header in enumerate(headers, start=1):
         col_letter = get_column_letter(col_num)
@@ -207,6 +219,8 @@ def list_batches(request):
         .distinct()
     )
 
+    total_count = batches.count()  # Total number of unique batches
+
     data = []
     for batch in batches:
         data.append({
@@ -219,10 +233,13 @@ def list_batches(request):
         })
 
     paginator = PageNumberPagination()
-    paginator.page_size = 10
+    paginator.page_size = 15
     paginated_data = paginator.paginate_queryset(data, request)
 
-    return paginator.get_paginated_response(paginated_data)
+    response = paginator.get_paginated_response(paginated_data)
+    response.data["total_count"] = total_count  # 👈 Added total count
+    return response
+
 
 
 @api_view(['GET'])
@@ -252,66 +269,70 @@ def view_batch_excel(request, batch_name):
 @permission_classes([IsAuthenticated])
 def update_batch_excel(request, batch_name):
     data = request.data
-    if not isinstance(data, list):
-        return Response({"error": "Expected a list of payee objects."}, status=400)
+    if not isinstance(data, dict):
+        return Response({"error": "Expected a JSON object with 'template' and 'payees'."}, status=400)
 
-    payees = TemplatePayee.objects.filter(batch_name=batch_name)
-    if not payees.exists():
-        return Response({"error": "Batch not found."}, status=404)
+    template_id = data.get("template_id") or data.get("template")
+    payee_ids = data.get("payees", [])
+    new_name = data.get("new_batch_name", batch_name)
 
-    template = payees.first().template
-    updated_items = []
+    if not template_id:
+        return Response({"error": "Template ID required."}, status=400)
+
+    try:
+        template = PaymentTemplate.objects.get(id=template_id)
+    except PaymentTemplate.DoesNotExist:
+        return Response({"error": "Template not found."}, status=404)
+
+    # Get existing batch payees
+    existing_payees = TemplatePayee.objects.filter(batch_name=batch_name)
+    existing_ids = set(existing_payees.values_list("payee_id", flat=True))
+    new_ids = set(payee_ids)
+
+    # Determine which to add / remove
+    to_add = new_ids - existing_ids
+    to_remove = existing_ids - new_ids
+
+    # Remove old payees
+    deleted_count, _ = TemplatePayee.objects.filter(
+        batch_name=batch_name,
+        payee_id__in=to_remove
+    ).delete()
+
+    # Add new payees
     created_items = []
+    for payee_id in to_add:
+        try:
+            new_payee = TemplatePayee.objects.create(
+                template=template,
+                payee_id=payee_id,
+                batch_name=new_name,
+                dynamic_data=json.loads(json.dumps(template.dynamic_fields or {})),
+                static_data=json.loads(json.dumps(template.static_fields or {})),
+                options_data=json.loads(json.dumps(template.options or {})),
+            )
+            created_items.append(TemplatePayeeSerializer(new_payee).data)
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to create payee {payee_id}: {str(e)}"},
+                status=400
+            )
 
-    for item in data:
-        payee_id = item.get("id")
-
-        # Update existing record
-        if payee_id:
-            try:
-                payee = TemplatePayee.objects.get(id=payee_id, batch_name=batch_name)
-            except TemplatePayee.DoesNotExist:
-                continue  # skip invalid IDs
-
-            serializer = TemplatePayeeSerializer(payee, data=item, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                updated_items.append(serializer.data)
-            else:
-                return Response(serializer.errors, status=400)
-
-        # Create new record
-        else:
-            # Require payee field for new creation
-            if not item.get("payee"):
-                return Response({"error": "payee ID is required for new entries."}, status=400)
-
-            serializer = TemplatePayeeSerializer(data={
-                "template": template.id,
-                "payee": item["payee"],
-                "batch_name": batch_name,
-                "dynamic_data": item.get("dynamic_data", {}),
-                "static_data": item.get("static_data", {}),
-                "options_data": item.get("options_data", {}),
-            })
-            if serializer.is_valid():
-                serializer.save()
-                created_items.append(serializer.data)
-            else:
-                return Response(serializer.errors, status=400)
+    # Rename all records if batch name changed
+    if new_name != batch_name:
+        TemplatePayee.objects.filter(batch_name=batch_name).update(batch_name=new_name)
 
     return Response({
-        "message": f"{len(updated_items)} updated, {len(created_items)} created.",
-        "template": {
-            "id": template.id,
-            "name": template.name,
-            "template_type": template.template_type
-        },
-        "updated_records": updated_items,
-        "new_records": created_items
+        "message": f"Batch '{batch_name}' updated successfully.",
+        "template": {"id": template.id, "name": template.name},
+        "added": len(created_items),
+        "removed": deleted_count,
+        "new_batch_name": new_name,
+        "created_items": created_items,
     }, status=200)
-    
-    
+
+
+
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_files(request, batch_name):
@@ -341,5 +362,126 @@ def payment_template_options(request, template_id):
         "template_name": template.name,
         "options": template.options or {},
     })
+
+
+from Paymagics_Payor.serializers import PayeeSerializer
+ 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def selected_payees(request):
+ 
+    payee_ids = request.data.get("payees", [])   # list of payee IDs
+    list_ids = request.data.get("lists", [])     # list of category IDs
+ 
+    # Start with manually selected payees
+    all_payee_ids = set(payee_ids)
+ 
+    # Fetch payees linked to any of the categories in lists
+    if list_ids:
+        category_payees = Payee.objects.filter(
+            categories__id__in=list_ids,
+            is_active=True
+        ).values_list("id", flat=True)
+        all_payee_ids.update(category_payees)
+ 
+    # If no payees found, return empty list
+    if not all_payee_ids:
+        return Response({"count": 0, "results": []})
+ 
+    # Final queryset
+    queryset = Payee.objects.filter(id__in=all_payee_ids, is_active=True).distinct()
+ 
+    # Pagination
+    paginator = PageNumberPagination()
+    paginator.page_size = 15
+    paginated_payees = paginator.paginate_queryset(queryset, request)
+ 
+    serializer = PayeeSerializer(paginated_payees, many=True)
+    return paginator.get_paginated_response(serializer.data)
+
+from Paymagics_Payor.models import PaymentTemplate
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def fetch_payees_for_template(request):
+    """
+    Fetch payees either by IDs or category/list IDs for a given template_id,
+    and merge with template dynamic/static/options fields.
+ 
+    Input example:
+    {
+        "payees": [2,4],
+        "lists": [7],
+        "template_id": "1"
+    }
+    """
+    template_id = request.data.get("template_id")
+    if not template_id:
+        return Response({"error": "template_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+ 
+    try:
+        template = PaymentTemplate.objects.get(id=template_id)
+    except PaymentTemplate.DoesNotExist:
+        return Response({"error": "Template not found"}, status=status.HTTP_404_NOT_FOUND)
+ 
+    payee_ids = request.data.get("payees", [])
+    list_ids = request.data.get("lists", [])
+ 
+    # Combine manually selected payees and payees from lists
+    all_payee_ids = set(payee_ids)
+ 
+    if list_ids:
+        category_payees = Payee.objects.filter(
+            categories__id__in=list_ids,
+            is_active=True
+        ).values_list("id", flat=True)
+        all_payee_ids.update(category_payees)
+ 
+    if not all_payee_ids:
+        return Response({"count": 0, "results": []})
+ 
+    queryset = Payee.objects.filter(id__in=all_payee_ids, is_active=True).distinct()
+ 
+    # Pagination
+    paginator = PageNumberPagination()
+    paginator.page_size = 15
+    paginated_payees = paginator.paginate_queryset(queryset, request)
+ 
+    results = []
+    for payee in paginated_payees:
+        payee_data = {}
+ 
+        # Dynamic fields from template
+        for field_name, model_field in (template.dynamic_fields or {}).items():
+            payee_data[field_name] = getattr(payee, model_field, None)
+ 
+        # Static fields from template
+        for field_name, value in (template.static_fields or {}).items():
+            payee_data[field_name] = value
+ 
+        # Options fields from template
+        for field_name, options in (template.options or {}).items():
+            payee_data[field_name] = options
+ 
+        results.append(payee_data)
+ 
+    # Build response
+    response_data = {
+        "template": {
+            "id": template.id,
+            "name": template.name,
+            "template_type": template.template_type,
+            "dynamic_fields": template.dynamic_fields or {},
+            "static_fields": template.static_fields or {},
+            "options": template.options or {},
+            "created_at": template.created_at,
+            "created_by": template.created_by.id if template.created_by else None,
+        },
+        "count": queryset.count(),
+        "results": results
+    }
+ 
+    return Response(response_data)
+ 
 
 

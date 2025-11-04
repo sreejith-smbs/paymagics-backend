@@ -68,6 +68,5 @@ class CreatePayeeSerializer(serializers.Serializer):
             )
 
         return data
-    
 
 

@@ -10,6 +10,10 @@ urlpatterns = [
     path("templates/batches/<str:batch_name>/update/", views.update_batch_excel, name="update_batch_excel"),
     path('templates/<str:batch_name>/download_excel/', views.download_batch_excel, name='download_batch_excel'),
     path("templates/<int:template_id>/options/", views.payment_template_options, name="template_options"),
-    path("delete_file/<str:batch_name>/", views.delete_files, name="delete_file") 
+    path("delete_file/<str:batch_name>/", views.delete_files, name="delete_file"),
+    path('payees_lists/', views.selected_payees, name='selected_payees'),
+    path('template_payees/', views.fetch_payees_for_template, name='template-payees-data'),
+    
+ 
     
 ]
