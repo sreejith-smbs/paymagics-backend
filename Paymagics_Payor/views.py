@@ -111,19 +111,30 @@ def create_payee(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # Generate referral code
-    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-    # Get the user creating the payee
+    # Get current user
     user = request.user
     try:
         payor = UserProfile.objects.get(user=user)
     except UserProfile.DoesNotExist:
         return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Create the payee
+    # Check for duplicate ben_code under the same payor
+    ben_code = serializer.validated_data["ben_code"]
+    if Payee.objects.filter(ben_code=ben_code, payor=payor, is_active=True).exists():
+        return Response(
+            {"error": f"Payee with ben_code '{ben_code}' already exists for this payor."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Generate referral code
+    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    # Handle payee_type properly
+    payee_type = serializer.validated_data.get("payee_type", "DOMESTIC")
+
+    # Create payee
     payee = Payee.objects.create(
-        ben_code=serializer.validated_data["ben_code"],
+        ben_code=ben_code,
         ben_name=serializer.validated_data["ben_name"],
         add1=serializer.validated_data["add1"],
         add2=serializer.validated_data["add2"],
@@ -132,8 +143,12 @@ def create_payee(request):
         zipcode=serializer.validated_data["zipcode"],
         contact=serializer.validated_data["contact"],
         email=serializer.validated_data["email"],
+        payee_type=payee_type,
         acc_no=serializer.validated_data.get("acc_no"),
         ifsc=serializer.validated_data.get("ifsc"),
+        iban=serializer.validated_data.get("iban"),
+        swift_code=serializer.validated_data.get("swift_code"),
+        sort_code=serializer.validated_data.get("sort_code"),
         bank_name=serializer.validated_data.get("bank_name"),
         branch=serializer.validated_data.get("branch"),
         bank_account_type=serializer.validated_data.get("bank_account_type"),
@@ -141,128 +156,119 @@ def create_payee(request):
         payor=payor
     )
 
-    # Handle a single category (by ID or name)
+    # Handle category
     category_input = request.data.get("category")
     if category_input:
-        # If numeric, treat as ID
         if isinstance(category_input, int) or str(category_input).isdigit():
             category = Category.objects.filter(id=int(category_input)).first()
             if not category:
                 return Response({'error': 'Category not found.'}, status=status.HTTP_404_NOT_FOUND)
         else:
-            # Treat as name
             category, created = Category.objects.get_or_create(category=category_input, defaults={'count': 0})
 
-        # Assign category to payee
         if not payee.categories.filter(id=category.id).exists():
             payee.categories.add(category)
 
-        # Update count based on active payees in this category
+        # Update category count based on active payees
         category.count = Payee.objects.filter(categories=category, is_active=True).count()
         category.save()
 
     return Response(PayeeSerializer(payee).data, status=status.HTTP_201_CREATED)
+
 
 #edit payee
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def edit_payee(request, pk):
     if not pk:
-        return Response(
-            {'error': 'Missing payee ID (pk) in query params.'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({'error': 'Missing payee ID (pk).'}, status=400)
 
-    # --- Fetch payee ---
+    # --- Fetch Payee ---
     try:
         payee = Payee.objects.get(pk=pk)
     except Payee.DoesNotExist:
-        return Response({'error': 'Payee not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'error': 'Payee not found.'}, status=404)
 
-    # --- Validate user ---
+    # --- Validate Requesting User ---
     try:
         user_profile = UserProfile.objects.get(user=request.user)
     except UserProfile.DoesNotExist:
-        return Response({'error': 'User profile not found.'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'User profile not found.'}, status=400)
 
     serializer = UpdatePayeeSerializer(instance=payee, data=request.data, partial=True)
     if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(serializer.errors, status=400)
 
     validated_data = serializer.validated_data
 
-    # --- Handle payee type validation and cleanup ---
-    payee_type = validated_data.get('payee_type', payee.payee_type)
+    # --- Handle Payee Type Switch ---
+    new_type = validated_data.get("payee_type", payee.payee_type)
 
-    if payee_type == 'INTERNATIONAL':
-        required_fields = ['iban', 'swift_code', 'sort_code']
-        missing = [f for f in required_fields if not validated_data.get(f) and not getattr(payee, f)]
-        if missing:
-            return Response(
-                {'error': f"Missing fields for INTERNATIONAL payee: {', '.join(missing)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+    # Case 1: Same type → Normal field check
+    if new_type == payee.payee_type:
+        if new_type == "DOMESTIC":
+            required = ["acc_no", "ifsc"]
+            missing = [f for f in required if not validated_data.get(f) and not getattr(payee, f)]
+            if missing:
+                return Response(
+                    {"error": f"Missing fields for DOMESTIC payee: {', '.join(missing)}"},
+                    status=400,
+                )
+        elif new_type == "INTERNATIONAL":
+            required = ["iban", "swift_code", "sort_code"]
+            missing = [f for f in required if not validated_data.get(f) and not getattr(payee, f)]
+            if missing:
+                return Response(
+                    {"error": f"Missing fields for INTERNATIONAL payee: {', '.join(missing)}"},
+                    status=400,
+                )
 
-        payee.acc_no = None
-        payee.ifsc = None
-
-    elif payee_type == 'DOMESTIC':
-        required_fields = ['acc_no', 'ifsc']
-        missing = [f for f in required_fields if not validated_data.get(f) and not getattr(payee, f)]
-        if missing:
-            return Response(
-                {'error': f"Missing fields for DOMESTIC payee: {', '.join(missing)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        payee.iban = None
-        payee.swift_code = None
-        payee.sort_code = None
+    # Case 2: Type changed → auto clear old fields, don’t error
+    elif new_type != payee.payee_type:
+        if new_type == "INTERNATIONAL":
+            payee.acc_no = None
+            payee.ifsc = None
+        elif new_type == "DOMESTIC":
+            payee.iban = None
+            payee.swift_code = None
+            payee.sort_code = None
+        # ✅ Apply new type immediately
+        payee.payee_type = new_type
 
     else:
         return Response(
-            {'error': "Invalid payee_type. Must be 'DOMESTIC' or 'INTERNATIONAL'."},
-            status=status.HTTP_400_BAD_REQUEST
+            {"error": "Invalid payee_type. Must be 'DOMESTIC' or 'INTERNATIONAL'."},
+            status=400,
         )
 
-    # --- Handle category update (only one category allowed) ---
+    # --- Handle Category Update ---
     category_data = request.data.get("category")
     if category_data is not None:
-        # Determine category (can be ID or name)
         if isinstance(category_data, int) or str(category_data).isdigit():
-            try:
-                category = Category.objects.get(id=category_data)
-            except Category.DoesNotExist:
-                return Response(
-                    {"error": f"Category with ID {category_data} not found."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            category = Category.objects.filter(id=int(category_data)).first()
+            if not category:
+                return Response({"error": "Category not found."}, status=400)
         else:
-            category, created = Category.objects.get_or_create(category=category_data)
-            if created:
-                category.count = 0
-                category.save()
+            category, _ = Category.objects.get_or_create(category=category_data)
 
-        # Adjust counts — remove old ones, add new one
-        old_categories = list(payee.categories.all())
-        for old_cat in old_categories:
+        # Update category relationships safely
+        for old_cat in payee.categories.all():
             old_cat.count = max((old_cat.count or 1) - 1, 0)
             old_cat.save()
 
         payee.categories.clear()
         payee.categories.add(category)
-
-        category.count = (category.count or 0) + 1
+        category.count = Payee.objects.filter(categories=category, is_active=True).count()
         category.save()
 
-    # --- Apply other field updates ---
+    # --- Apply Field Updates ---
     for attr, value in validated_data.items():
-        if attr != 'categories' and attr != 'category':  # handled above
+        if attr not in ["categories", "category", "payee_type"]:
             setattr(payee, attr, value)
 
     payee.save()
 
-    return Response(PayeeSerializer(payee).data, status=status.HTTP_200_OK)
+    return Response(PayeeSerializer(payee).data, status=200)
 
 
 #delete payee

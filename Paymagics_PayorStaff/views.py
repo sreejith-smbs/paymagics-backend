@@ -19,7 +19,6 @@ from rest_framework.pagination import PageNumberPagination
 
 
 
-# -----------------------------
 # -----------------------------PaymentTemplate Views
 
 @api_view(['GET', 'POST'])
@@ -226,7 +225,93 @@ def list_batches(request):
     return paginator.get_paginated_response(paginated_data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def view_batch_excel(request, batch_name):
+    payees = TemplatePayee.objects.filter(batch_name=batch_name)
+    if not payees.exists():
+        return Response({"error": "Batch not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # All payees in the same batch share one template
+    template = payees.first().template  
+
+    payees_data = TemplatePayeeSerializer(payees, many=True).data
+    template_data = PaymentTemplateSerializer(template).data
+
+    response_data = {
+        "batch_name": batch_name,
+        "template": template_data,
+        "total_records": len(payees_data),
+        "records": payees_data
+    }
+
+    return Response(response_data, status=status.HTTP_200_OK)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_batch_excel(request, batch_name):
+    data = request.data
+    if not isinstance(data, list):
+        return Response({"error": "Expected a list of payee objects."}, status=400)
+
+    payees = TemplatePayee.objects.filter(batch_name=batch_name)
+    if not payees.exists():
+        return Response({"error": "Batch not found."}, status=404)
+
+    template = payees.first().template
+    updated_items = []
+    created_items = []
+
+    for item in data:
+        payee_id = item.get("id")
+
+        # Update existing record
+        if payee_id:
+            try:
+                payee = TemplatePayee.objects.get(id=payee_id, batch_name=batch_name)
+            except TemplatePayee.DoesNotExist:
+                continue  # skip invalid IDs
+
+            serializer = TemplatePayeeSerializer(payee, data=item, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                updated_items.append(serializer.data)
+            else:
+                return Response(serializer.errors, status=400)
+
+        # Create new record
+        else:
+            # Require payee field for new creation
+            if not item.get("payee"):
+                return Response({"error": "payee ID is required for new entries."}, status=400)
+
+            serializer = TemplatePayeeSerializer(data={
+                "template": template.id,
+                "payee": item["payee"],
+                "batch_name": batch_name,
+                "dynamic_data": item.get("dynamic_data", {}),
+                "static_data": item.get("static_data", {}),
+                "options_data": item.get("options_data", {}),
+            })
+            if serializer.is_valid():
+                serializer.save()
+                created_items.append(serializer.data)
+            else:
+                return Response(serializer.errors, status=400)
+
+    return Response({
+        "message": f"{len(updated_items)} updated, {len(created_items)} created.",
+        "template": {
+            "id": template.id,
+            "name": template.name,
+            "template_type": template.template_type
+        },
+        "updated_records": updated_items,
+        "new_records": created_items
+    }, status=200)
+    
+    
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_files(request, batch_name):
@@ -256,3 +341,5 @@ def payment_template_options(request, template_id):
         "template_name": template.name,
         "options": template.options or {},
     })
+
+
