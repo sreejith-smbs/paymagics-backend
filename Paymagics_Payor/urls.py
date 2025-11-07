@@ -20,16 +20,16 @@ urlpatterns = [
     path('export-payees/<int:template_id>/', export_payees_excel, name='export_payees'),
 
     #referrel
-    # path('send-invitation/', send_invitation, name='send-invitation'),
-    # path('referral/<uuid:referral_code>/', referral_details, name='referral-details'),
-    # path('send-invitation/<uuid:referral_code>/complete/', complete_payee_profile, name='complete-payee-profile'),
-    path('referral/<str:referral_code>/', create_payee_via_referral, name='complete-payee-profile'),
+    path('referral/', send_invite_email, name='add_payee'),
+    path('add-payee/<str:referral_id>/', create_payee_via_referral, name='complete-payee-profile'),
 
     #list dashboard counts
     path("list_counts/",list_counts, name='list-counts'),
 
     # payment template
     path("templates/<int:template_id>/options/", payment_template_options, name="template_options"),
-    path("delete_file/<str:batch_name>/", delete_files, name="delete_file") 
+    path("delete_file/<str:batch_name>/", delete_files, name="delete_file") ,
+
+
 
 ]

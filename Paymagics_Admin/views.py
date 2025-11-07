@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from .models import UserProfile, UserRole
-from Paymagics_Payor.models import Payee, ReferralInvite, Category
+from Paymagics_Payor.models import Payee, Category
 from Paymagics_Payor.serializers import PayeeSerializer, CategorySerializer
 from .serializers import CreatePayorSerializer, UserProfileSerializer, CreatePayorStaffSerializer, PasswordResetConfirmSerializer, PasswordResetRequestSerializer
 from django.contrib.auth.hashers import make_password
@@ -453,8 +453,6 @@ def admin_dashboard(request):
 
     active_sessions = Session.objects.filter(expire_date__gte=timezone.now()).count()
 
-    pending_payments = ReferralInvite.objects.filter(status="pending").count()
-
     system_start = (
         UserProfile.objects.earliest("created_at").created_at
         if UserProfile.objects.exists()
@@ -495,7 +493,6 @@ def admin_dashboard(request):
         },
         "system_overview": {
             "active_sessions": active_sessions,
-            "pending_payments": pending_payments,
             "uptime_days": uptime_days,
         },
         "recent_activity": recent_activity,

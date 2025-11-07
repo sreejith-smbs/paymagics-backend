@@ -23,65 +23,87 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 
 
-#create (input:category,payee-optional) or edit (input:category-id, payee-optional) list
-@api_view(["POST"])
+
+def generate_referral_code(length=6):
+    """Generate a random alphanumeric referral code."""
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+
+@api_view(["POST", "PUT"])
 @permission_classes([IsAuthenticated])
 def create_or_update_category(request):
-    category_input = request.data.get("category")         
-    new_category_name = request.data.get("new_name")      
+            
     payee_ids = request.data.get("payees")  # expecting a list of IDs
     description = request.data.get("description")  # optional
-
-    if not category_input and not payee_ids:
-        return Response(
-            {"error": "Provide at least a category (name or ID) or payee IDs."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
 
     category = None
     message = ""
 
-    # Fetch category by ID or name
-    try:
-        category_id = int(category_input)
-        category = Category.objects.filter(id=category_id).first()
-        if not category:
-            return Response({"error": "Category with this ID not found."}, status=status.HTTP_404_NOT_FOUND)
-        message = "Category found by ID."
-    except (TypeError, ValueError):
-        category_name = category_input
-        category = Category.objects.filter(category__iexact=category_name).first()
-        if not category:
-            category = Category.objects.create(category=category_name, description=description or "", count=0)
-            message = "New category created."
-        else:
-            if description:
-                category.description = description
-                category.save()
-                message = "Category exists. Description updated."
-            else:
-                message = "Category exists."
+    if request.method == "POST":
+        # --- POST: strictly create a new category ---
+        category_input = request.data.get("category")  
+        if not category_input:
+            return Response({"error": "Category name is required for creation."}, status=400)
 
-    # Rename if new_name provided
-    if new_category_name:
-        if Category.objects.filter(category__iexact=new_category_name).exclude(id=category.id).exists():
-            return Response({"error": "A category with the new name already exists."}, status=status.HTTP_400_BAD_REQUEST)
-        old_name = category.category
-        category.category = new_category_name
-        category.save()
-        message += f" Renamed from '{old_name}' to '{new_category_name}'."
+        # Check if category already exists
+        if Category.objects.filter(category__iexact=category_input).exists():
+            return Response({"error": "Category with this name already exists."}, status=400)
 
-    # Handle payee-category linking
+        # Create new category
+        category = Category.objects.create(
+            category=category_input,
+            description=description or "",
+            count=0,
+            referral_code=generate_referral_code()
+        )
+        message = "New category created with referral code."
+
+    elif request.method == "PUT":
+        # --- PUT: update existing category ---
+             
+        category_input = request.data.get("id")  
+        if not category_input:
+            return Response({"error": "Category ID or name required for update."}, status=400)
+
+        try:
+            category_id = int(category_input)
+            category = Category.objects.filter(id=category_id).first()
+            if not category:
+                return Response({"error": "Category with this ID not found."}, status=404)
+            message = "Category found by ID."
+        except (TypeError, ValueError):
+            category_name = category_input
+            category = Category.objects.filter(category__iexact=category_name).first()
+            if not category:
+                return Response({"error": "Category not found by name."}, status=404)
+            message = "Category found by name."
+
+        new_category_name = request.data.get("category") 
+        # Rename if needed
+        if new_category_name:
+            if Category.objects.filter(category__iexact=new_category_name).exclude(id=category.id).exists():
+                return Response({"error": "A category with the new name already exists."}, status=400)
+            old_name = category.category
+            category.category = new_category_name
+            category.save()
+            message += f" Renamed from '{old_name}' to '{new_category_name}'."
+
+        # Update description if provided
+        if description:
+            category.description = description
+            category.save()
+            message += " Description updated."
+
+    # --- Assign category to payees if provided ---
     newly_assigned_count = 0
     if payee_ids:
         if not isinstance(payee_ids, list):
-            return Response({"error": "Payees must be a list of IDs."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Payees must be a list of IDs."}, status=400)
 
         for payee_id in payee_ids:
             try:
                 payee = Payee.objects.get(id=payee_id, is_active=True)
             except Payee.DoesNotExist:
-                return Response({"error": f"Payee with ID {payee_id} not found or inactive."}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"error": f"Payee with ID {payee_id} not found or inactive."}, status=404)
 
             if not payee.categories.filter(id=category.id).exists():
                 payee.categories.add(category)
@@ -99,8 +121,9 @@ def create_or_update_category(request):
         "category": category.category,
         "description": category.description,
         "count": category.count,
+        "referral_code": category.referral_code,
         "message": message
-    }, status=status.HTTP_200_OK)
+    }, status=200)
 
 
 #create payee
@@ -111,53 +134,28 @@ def create_payee(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    # Get current user
+    # Get current user and profile
     user = request.user
     try:
         payor = UserProfile.objects.get(user=user)
     except UserProfile.DoesNotExist:
         return Response({'error': 'User profile not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Check for duplicate ben_code under the same payor
+    # Extract validated fields
     ben_code = serializer.validated_data["ben_code"]
+    ben_name = serializer.validated_data["ben_name"]
+
+    # Check for duplicate ben_code under the same payor
     if Payee.objects.filter(ben_code=ben_code, payor=payor, is_active=True).exists():
         return Response(
             {"error": f"Payee with ben_code '{ben_code}' already exists for this payor."},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    # Generate referral code
-    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-    # Handle payee_type properly
-    payee_type = serializer.validated_data.get("payee_type", "DOMESTIC")
-
-    # Create payee
-    payee = Payee.objects.create(
-        ben_code=ben_code,
-        ben_name=serializer.validated_data["ben_name"],
-        add1=serializer.validated_data["add1"],
-        add2=serializer.validated_data["add2"],
-        city=serializer.validated_data["city"],
-        state=serializer.validated_data["state"],
-        zipcode=serializer.validated_data["zipcode"],
-        contact=serializer.validated_data["contact"],
-        email=serializer.validated_data["email"],
-        payee_type=payee_type,
-        acc_no=serializer.validated_data.get("acc_no"),
-        ifsc=serializer.validated_data.get("ifsc"),
-        iban=serializer.validated_data.get("iban"),
-        swift_code=serializer.validated_data.get("swift_code"),
-        sort_code=serializer.validated_data.get("sort_code"),
-        bank_name=serializer.validated_data.get("bank_name"),
-        branch=serializer.validated_data.get("branch"),
-        bank_account_type=serializer.validated_data.get("bank_account_type"),
-        referralcode=referral_code,
-        payor=payor
-    )
-
-    # Handle category
+    # Handle category validation BEFORE creating payee
     category_input = request.data.get("category")
+    category = None
+
     if category_input:
         if isinstance(category_input, int) or str(category_input).isdigit():
             category = Category.objects.filter(id=int(category_input)).first()
@@ -166,10 +164,50 @@ def create_payee(request):
         else:
             category, created = Category.objects.get_or_create(category=category_input, defaults={'count': 0})
 
+    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    payee_type = serializer.validated_data.get("payee_type", "DOMESTIC")
+
+    validated_data = serializer.validated_data.copy()
+
+    if validated_data["payee_type"].upper() == "DOMESTIC":
+        validated_data["iban"] = None
+        validated_data["swift_code"] = None
+        validated_data["sort_code"] = None
+
+    elif validated_data["payee_type"].upper() == "INTERNATIONAL":
+        validated_data["ifsc"] = None
+        validated_data["acc_no"] = None
+
+    payee = Payee.objects.create(
+        ben_code=validated_data["ben_code"],
+        ben_name=validated_data["ben_name"],
+        add1=validated_data["add1"],
+        add2=validated_data["add2"],
+        city=validated_data["city"],
+        state=validated_data["state"],
+        zipcode=validated_data["zipcode"],
+        contact=validated_data["contact"],
+        email=validated_data["email"],
+        payee_type=validated_data["payee_type"],
+        acc_no=validated_data.get("acc_no"),
+        ifsc=validated_data.get("ifsc"),
+        iban=validated_data.get("iban"),
+        swift_code=validated_data.get("swift_code"),
+        sort_code=validated_data.get("sort_code"),
+        bank_name=validated_data.get("bank_name"),
+        branch=validated_data.get("branch"),
+        bank_account_type=validated_data.get("bank_account_type"),
+        referralcode=referral_code,
+        payor=payor
+    )
+
+
+    # Add category after payee is created
+    if category:
         if not payee.categories.filter(id=category.id).exists():
             payee.categories.add(category)
 
-        # Update category count based on active payees
+        # Update category count
         category.count = Payee.objects.filter(categories=category, is_active=True).count()
         category.save()
 
@@ -215,7 +253,7 @@ def edit_payee(request, pk):
                     status=400,
                 )
         elif new_type == "INTERNATIONAL":
-            required = ["iban", "swift_code", "sort_code"]
+            required = ["iban", "swift_code"]
             missing = [f for f in required if not validated_data.get(f) and not getattr(payee, f)]
             if missing:
                 return Response(
@@ -335,21 +373,19 @@ def payee_detail(request, pk):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-#view all lists - paginated
+#view all lists 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def view_list(request):
     queryset = Category.objects.all()
-    total_count = queryset.count()  # 👈 total number of categories
+    total_count = queryset.count()  
 
-    paginator = PageNumberPagination()
-    paginator.page_size = 5
-    result_page = paginator.paginate_queryset(queryset, request)
-    serializer = CategorySerializer(result_page, many=True)
+    serializer = CategorySerializer(queryset, many=True)
 
-    response = paginator.get_paginated_response(serializer.data)
-    response.data["total_count"] = total_count  # 👈 add total count
-    return response
+    return Response({
+        "total_count": total_count,
+        "results": serializer.data
+    })
 
 
 
@@ -565,81 +601,6 @@ def generate_unique_ben_code():
             return ben_code
 
 
-@api_view(["POST"])
-@permission_classes([AllowAny])
-@transaction.atomic
-def create_payee_via_referral(request, referral_code):
-    """
-    Public API — Create a Payee using an existing Payor's referral code (no authentication).
-    - ben_code is always auto-generated
-    - Validates banking fields based on payee_type
-    - No category handling
-    """
-    serializer = CreatePayeeSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=400)
-
-    data = serializer.validated_data
-    payee_type = data.get("payee_type")
-
-    #  Find payor by referral code
-    payor = get_object_or_404(UserProfile, referral_code=referral_code)
-
-    #  Always auto-generate ben_code
-    ben_code = generate_unique_ben_code()
-
-    #  Generate new referral code for payee
-    referral_code_new = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-
-    #  Validate banking fields
-    acc_no = data.get("acc_no")
-    ifsc = data.get("ifsc")
-    iban = data.get("iban")
-    swift_code = data.get("swift_code")
-    sort_code = data.get("sort_code")
-
-    if payee_type == "Domestic":
-        if not acc_no or not ifsc:
-            return Response(
-                {"error": "For Domestic payees, both 'acc_no' and 'ifsc' are required."},
-                status=400
-            )
-    elif payee_type == "INTERNATIONAL":
-        if not iban or not swift_code:
-            return Response(
-                {"error": "For International payees, both 'iban' and 'swift_code' are required."},
-                status=400
-            )
-    else:
-        return Response({"error": "Invalid payee_type. (Use : Domestic/International)"}, status=400)
-
-    # Create Payee
-    payee = Payee.objects.create(
-        ben_code=ben_code,
-        ben_name=data["ben_name"],
-        add1=data.get("add1"),
-        add2=data.get("add2"),
-        city=data.get("city"),
-        state=data.get("state"),
-        zipcode=data.get("zipcode"),
-        contact=data.get("contact"),
-        email=data.get("email"),
-        acc_no=acc_no,
-        ifsc=ifsc,
-        iban=iban,
-        swift_code=swift_code,
-        sort_code=sort_code,
-        bank_name=data.get("bank_name"),
-        branch=data.get("branch"),
-        bank_account_type=data.get("bank_account_type"),
-        referralcode=referral_code_new,
-        payee_type=payee_type,
-        payor=payor
-    )
-
-    return Response(PayeeSerializer(payee).data, status=201)
-
-
 
 
 #view payees corresponding to list
@@ -768,3 +729,168 @@ def remove_payee_from_category(request):
         "category_count": category.count,
         "message": message
     }, status=status.HTTP_200_OK)
+
+
+
+
+
+
+
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.conf import settings
+import json
+
+@csrf_exempt  # only for testing with Postman
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_invite_email(request):
+    try:
+        # Handle JSON or form POST
+        if request.content_type == "application/json":
+            data = json.loads(request.body)
+        else:
+            data = request.POST
+
+        recipient_email = data.get("email")
+        custom_msg = data.get("message", "You are invited!")
+        category = data.get("category")
+
+        if not recipient_email:
+            return Response({"status": "error", "message": "Email not provided"}, status=400)
+        if not category:
+            return Response({"status": "error", "message": "Category not provided"}, status=400)
+
+        # Get category and referral code
+        try:
+            cat = Category.objects.get(pk=category)
+            referral_code = cat.referral_code
+        except Category.DoesNotExist:
+            return Response({'error': 'Category not found.'}, status=404)
+
+        # Build referral link
+        frontend_base_url = "https://paymagics-frontend.vercel.app/invite"
+
+        # Construct the link with query parameter
+        referral_link = f"{frontend_base_url}?referral_code={referral_code}"
+
+        # Render HTML email template
+        message = render_to_string('referral_email.html', {
+            'referral_link': referral_link
+        })
+
+        # Send email
+        email = EmailMessage(
+            subject="Invitation to Join",
+            body=message,
+            from_email=settings.EMAIL_HOST_USER,
+            to=[recipient_email]
+        )
+        email.content_subtype = 'html'
+        email.send()
+
+        return Response({"status": "success", "message": f"Invite sent to {recipient_email}"})
+
+    except Exception as e:
+        return Response({"status": "error", "message": str(e)}, status=500)
+
+
+
+
+def generate_unique_ben_code(length=8):
+    """Generate a unique ben_code."""
+    while True:
+        ben_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+        if not Payee.objects.filter(ben_code=ben_code).exists():
+            return ben_code
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@transaction.atomic
+def create_payee_via_referral(request, referral_id):
+    """
+    Public API — Create a Payee using a Category's referral code.
+    - No authentication required.
+    - ben_code auto-generated (unique)
+    - Validates banking fields based on payee_type
+    - Category found via referral_id
+    """
+
+    # 1️⃣ Get Category using referral_id
+    category = get_object_or_404(Category, referral_code=referral_id)
+
+    # 2️⃣ Validate request data
+    serializer = CreatePayeeSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    validated_data = serializer.validated_data
+    payee_type = validated_data.get("payee_type", "DOMESTIC").upper()
+
+    # 3️⃣ Generate unique ben_code and referral_code
+    ben_code = generate_unique_ben_code()
+    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+    # 4️⃣ Validate required banking fields
+    acc_no = validated_data.get("acc_no")
+    ifsc = validated_data.get("ifsc")
+    iban = validated_data.get("iban")
+    swift_code = validated_data.get("swift_code")
+
+    if payee_type == "DOMESTIC":
+        if not acc_no or not ifsc:
+            return Response({"error": "For Domestic payees, 'acc_no' and 'ifsc' are required."}, status=400)
+        validated_data["iban"] = None
+        validated_data["swift_code"] = None
+        validated_data["sort_code"] = None
+
+    elif payee_type == "INTERNATIONAL":
+        if not iban or not swift_code:
+            return Response({"error": "For International payees, 'iban' and 'swift_code' are required."}, status=400)
+        validated_data["ifsc"] = None
+        validated_data["acc_no"] = None
+
+    else:
+        return Response({"error": "Invalid payee_type (use 'Domestic' or 'International')."}, status=400)
+
+    # 5️⃣ Check duplicate Payee by email (optional but recommended)
+    if Payee.objects.filter(email=validated_data["email"], is_active=True).exists():
+        return Response(
+            {"error": f"A Payee with this email '{validated_data['email']}' already exists."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 6️⃣ Create Payee object
+    payee = Payee.objects.create(
+        ben_code=ben_code,
+        ben_name=validated_data["ben_name"],
+        add1=validated_data.get("add1"),
+        add2=validated_data.get("add2"),
+        city=validated_data.get("city"),
+        state=validated_data.get("state"),
+        zipcode=validated_data.get("zipcode"),
+        contact=validated_data.get("contact"),
+        email=validated_data.get("email"),
+        payee_type=payee_type,
+        acc_no=validated_data.get("acc_no"),
+        ifsc=validated_data.get("ifsc"),
+        iban=validated_data.get("iban"),
+        swift_code=validated_data.get("swift_code"),
+        sort_code=validated_data.get("sort_code"),
+        bank_name=validated_data.get("bank_name"),
+        branch=validated_data.get("branch"),
+        bank_account_type=validated_data.get("bank_account_type"),
+        referralcode=referral_code,
+        payor=None  # No payor for public referral registration
+    )
+
+    # 7️⃣ Assign category to payee
+    payee.categories.add(category)
+
+    # 8️⃣ Update category count (active payees only)
+    category.count = Payee.objects.filter(categories=category, is_active=True).count()
+    category.save()
+
+    # 9️⃣ Return created Payee
+    return Response(PayeeSerializer(payee).data, status=status.HTTP_201_CREATED)

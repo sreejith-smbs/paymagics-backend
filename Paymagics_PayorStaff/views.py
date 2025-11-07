@@ -32,16 +32,13 @@ def templates(request):
 
     if request.method == 'GET':
         templates = PaymentTemplate.objects.filter(template_type=template_type)
-        total_count = templates.count()  # 👈 total number of templates of this type
-
-        paginator = PageNumberPagination()
-        paginator.page_size = 15  
-        paginated_templates = paginator.paginate_queryset(templates, request)
-        serializer = PaymentTemplateSerializer(paginated_templates, many=True)
-
-        response = paginator.get_paginated_response(serializer.data)
-        response.data["total_count"] = total_count  # 👈 add total count to response
-        return response
+        total_count = templates.count()  
+        serializer = PaymentTemplateSerializer(templates, many=True)
+ 
+        return Response({
+            "total_count": total_count,
+            "results": serializer.data
+        })
 
     elif request.method == 'POST':
         name = request.data.get("name")
@@ -114,6 +111,8 @@ def add_payees_to_template(request, template_id):
 
     for data in payees_data:
         payee_id = data.get("payee_id")
+        if not payee_id:
+            continue
 
         try:
             payee = Payee.objects.get(id=payee_id)
@@ -122,6 +121,7 @@ def add_payees_to_template(request, template_id):
 
         payee_dict = model_to_dict(payee)
 
+        # Map dynamic fields from Payee model → template
         dynamic_fields_map = template.dynamic_fields or {}
         dynamic_data = {
             header: payee_dict.get(model_field)
@@ -129,9 +129,11 @@ def add_payees_to_template(request, template_id):
             if model_field in payee_dict
         }
 
-        static_data = template.static_fields or {}
+        # ✅ Use provided static_fields, fallback to template defaults
+        static_data = data.get("static_fields", template.static_fields or {})
 
-        options_data = data.get("options_data", {})
+        # ✅ Use provided options_data, fallback to template defaults
+        options_data = data.get("options_data", template.options or {})
 
         template_payee = TemplatePayee.objects.create(
             template=template,
@@ -142,6 +144,7 @@ def add_payees_to_template(request, template_id):
             batch_name=batch_name
         )
         created_payees.append(template_payee)
+
     serializer = TemplatePayeeSerializer(created_payees, many=True)
     return Response({
         "template": PaymentTemplateSerializer(template).data,
@@ -269,68 +272,94 @@ def view_batch_excel(request, batch_name):
 @permission_classes([IsAuthenticated])
 def update_batch_excel(request, batch_name):
     data = request.data
-    if not isinstance(data, dict):
-        return Response({"error": "Expected a JSON object with 'template' and 'payees'."}, status=400)
-
-    template_id = data.get("template_id") or data.get("template")
-    payee_ids = data.get("payees", [])
-    new_name = data.get("new_batch_name", batch_name)
+    template_id = data.get("template_id")
+    records = data.get("records", [])
+    new_batch_name = data.get("new_batch_name", batch_name)
 
     if not template_id:
         return Response({"error": "Template ID required."}, status=400)
+    if not isinstance(records, list) or not records:
+        return Response({"error": "records must be a non-empty list."}, status=400)
 
     try:
         template = PaymentTemplate.objects.get(id=template_id)
     except PaymentTemplate.DoesNotExist:
         return Response({"error": "Template not found."}, status=404)
 
-    # Get existing batch payees
-    existing_payees = TemplatePayee.objects.filter(batch_name=batch_name)
-    existing_ids = set(existing_payees.values_list("payee_id", flat=True))
-    new_ids = set(payee_ids)
+    payees_qs = TemplatePayee.objects.filter(batch_name=batch_name)
+    existing_payee_ids = list(payees_qs.values_list("payee_id", flat=True))
 
-    # Determine which to add / remove
-    to_add = new_ids - existing_ids
-    to_remove = existing_ids - new_ids
+    updated_records = []
+    created_records = []
+    errors = []
 
-    # Remove old payees
-    deleted_count, _ = TemplatePayee.objects.filter(
-        batch_name=batch_name,
-        payee_id__in=to_remove
-    ).delete()
+    for rec in records:
+        payee_id = rec.get("payee_id")
+        static_fields = rec.get("static_fields", {})
+        options_selection = rec.get("options_selection", {})
 
-    # Add new payees
-    created_items = []
-    for payee_id in to_add:
+        if not payee_id:
+            errors.append({"error": "Missing payee_id in record."})
+            continue
+
         try:
-            new_payee = TemplatePayee.objects.create(
+            payee = Payee.objects.get(id=payee_id)
+        except Payee.DoesNotExist:
+            errors.append({"payee_id": payee_id, "error": "Invalid payee_id"})
+            continue
+
+        # If payee already exists in batch → update it
+        if payee_id in existing_payee_ids:
+            tp = payees_qs.get(payee_id=payee_id)
+
+            if static_fields:
+                tp.static_data.update(static_fields)
+
+            if options_selection:
+                for key, value in options_selection.items():
+                    if key in (template.options or {}):
+                        tp.options_data[key] = value
+
+            tp.save()
+            updated_records.append(TemplatePayeeSerializer(tp).data)
+
+        # Else → create a new TemplatePayee record
+        else:
+            payee_dict = model_to_dict(payee)
+            dynamic_fields_map = template.dynamic_fields or {}
+            dynamic_data = {
+                header: payee_dict.get(model_field)
+                for header, model_field in dynamic_fields_map.items()
+                if model_field in payee_dict
+            }
+
+            static_data = static_fields or template.static_fields or {}
+            options_data = options_selection or template.options or {}
+
+            new_tp = TemplatePayee.objects.create(
                 template=template,
-                payee_id=payee_id,
-                batch_name=new_name,
-                dynamic_data=json.loads(json.dumps(template.dynamic_fields or {})),
-                static_data=json.loads(json.dumps(template.static_fields or {})),
-                options_data=json.loads(json.dumps(template.options or {})),
-            )
-            created_items.append(TemplatePayeeSerializer(new_payee).data)
-        except Exception as e:
-            return Response(
-                {"error": f"Failed to create payee {payee_id}: {str(e)}"},
-                status=400
+                payee=payee,
+                dynamic_data=dynamic_data,
+                static_data=static_data,
+                options_data=options_data,
+                batch_name=batch_name
             )
 
-    # Rename all records if batch name changed
-    if new_name != batch_name:
-        TemplatePayee.objects.filter(batch_name=batch_name).update(batch_name=new_name)
+            created_records.append(TemplatePayeeSerializer(new_tp).data)
+
+    # Optional batch rename
+    if new_batch_name != batch_name:
+        TemplatePayee.objects.filter(batch_name=batch_name).update(batch_name=new_batch_name)
 
     return Response({
         "message": f"Batch '{batch_name}' updated successfully.",
-        "template": {"id": template.id, "name": template.name},
-        "added": len(created_items),
-        "removed": deleted_count,
-        "new_batch_name": new_name,
-        "created_items": created_items,
+        "updated_count": len(updated_records),
+        "new_count": len(created_records),
+        "errors": errors,
+        "new_batch_name": new_batch_name,
+        "updated_records": updated_records,
+        "new_records": created_records
     }, status=200)
-
 
 
 @api_view(["DELETE"])
@@ -404,17 +433,7 @@ from Paymagics_Payor.models import PaymentTemplate
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def fetch_payees_for_template(request):
-    """
-    Fetch payees either by IDs or category/list IDs for a given template_id,
-    and merge with template dynamic/static/options fields.
  
-    Input example:
-    {
-        "payees": [2,4],
-        "lists": [7],
-        "template_id": "1"
-    }
-    """
     template_id = request.data.get("template_id")
     if not template_id:
         return Response({"error": "template_id is required"}, status=status.HTTP_400_BAD_REQUEST)

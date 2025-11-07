@@ -7,6 +7,7 @@ class Category(models.Model):
     category = models.CharField(max_length=55, unique=True)
     description = models.CharField(max_length=500,blank=True,null=True)
     count = models.IntegerField(default=0)
+    referral_code = models.CharField(max_length=6, blank=True, null=True)
 
     def __str__(self):
         return self.category
@@ -51,22 +52,22 @@ class Payee(models.Model):
         return f"{self.ben_name} - {'Active' if self.is_active else 'Deleted'}"
 
 
-class ReferralInvite(models.Model):
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('clicked', 'Clicked'),
-        ('completed', 'Completed'),
-        ('expired', 'Expired'),
-    ]
+# class ReferralInvite(models.Model):
+#     STATUS_CHOICES = [
+#         ('pending', 'Pending'),
+#         ('clicked', 'Clicked'),
+#         ('completed', 'Completed'),
+#         ('expired', 'Expired'),
+#     ]
 
-    payor = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='sent_invites')
-    payee_email = models.EmailField()
-    referral_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+#     payor = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='sent_invites')
+#     payee_email = models.EmailField()
+#     referral_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+#     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
-        return f"Invite from {self.payor.username} to {self.payee_email} [{self.status}]"
+#     def __str__(self):
+#         return f"Invite from {self.payor.username} to {self.payee_email} [{self.status}]"
       
 

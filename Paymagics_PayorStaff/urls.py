@@ -13,7 +13,5 @@ urlpatterns = [
     path("delete_file/<str:batch_name>/", views.delete_files, name="delete_file"),
     path('payees_lists/', views.selected_payees, name='selected_payees'),
     path('template_payees/', views.fetch_payees_for_template, name='template-payees-data'),
-    
- 
-    
+     
 ]

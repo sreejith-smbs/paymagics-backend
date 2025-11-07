@@ -42,13 +42,13 @@ class CreatePayeeSerializer(serializers.Serializer):
     bank_name = serializers.CharField(max_length=100, required=False)
     branch = serializers.CharField(max_length=100, required=False)
     bank_account_type = serializers.CharField(max_length=100, required=False)
-    category = serializers.IntegerField()
+    category = serializers.IntegerField(required=False)
 
     def validate(self, data):
         payee_type = data.get('payee_type')
 
         if payee_type == 'INTERNATIONAL':
-            required_fields = ['iban', 'swift_code', 'sort_code']
+            required_fields = ['iban', 'swift_code']
             missing = [field for field in required_fields if not data.get(field)]
             if missing:
                 raise serializers.ValidationError(
