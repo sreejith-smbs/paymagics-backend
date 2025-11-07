@@ -8,9 +8,7 @@ env = Env()
 
 Env.read_env()
 
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-FRONTEND_BASE_URL = "http://localhost:3000" 
-DEFAULT_FROM_EMAIL = "noreply@yourdomain.com"
+FRONTEND_BASE_URL = "http://localhost:3000"
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -178,3 +176,12 @@ SIMPLE_JWT = {
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
 }
+
+
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
