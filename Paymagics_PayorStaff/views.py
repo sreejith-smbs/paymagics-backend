@@ -293,6 +293,8 @@ def update_batch_excel(request, batch_name):
     created_records = []
     errors = []
 
+    incoming_payee_ids = []
+
     for rec in records:
         payee_id = rec.get("payee_id")
         static_fields = rec.get("static_fields", {})
@@ -302,29 +304,42 @@ def update_batch_excel(request, batch_name):
             errors.append({"error": "Missing payee_id in record."})
             continue
 
+        incoming_payee_ids.append(payee_id)
+
         try:
             payee = Payee.objects.get(id=payee_id)
         except Payee.DoesNotExist:
             errors.append({"payee_id": payee_id, "error": "Invalid payee_id"})
             continue
 
-        # If payee already exists in batch → update it
         if payee_id in existing_payee_ids:
+            # Update existing TemplatePayee
             tp = payees_qs.get(payee_id=payee_id)
 
-            if static_fields:
-                tp.static_data.update(static_fields)
+            # Update dynamic data from template fields
+            dynamic_fields_map = template.dynamic_fields or {}
+            for header, model_field in dynamic_fields_map.items():
+                tp.dynamic_data[header] = getattr(payee, model_field, "")
 
+            # Update static data
+            tp.static_data.update(static_fields or template.static_fields or {})
+
+            # Update options data
             if options_selection:
                 for key, value in options_selection.items():
                     if key in (template.options or {}):
                         tp.options_data[key] = value
+            else:
+                tp.options_data.update(template.options or {})
 
+            # Update template reference
+            tp.template = template
             tp.save()
+
             updated_records.append(TemplatePayeeSerializer(tp).data)
 
-        # Else → create a new TemplatePayee record
         else:
+            # Create new TemplatePayee
             payee_dict = model_to_dict(payee)
             dynamic_fields_map = template.dynamic_fields or {}
             dynamic_data = {
@@ -347,6 +362,11 @@ def update_batch_excel(request, batch_name):
 
             created_records.append(TemplatePayeeSerializer(new_tp).data)
 
+    # Delete payees not present in the new records
+    payees_to_delete = payees_qs.exclude(payee_id__in=incoming_payee_ids)
+    deleted_count = payees_to_delete.count()
+    payees_to_delete.delete()
+
     # Optional batch rename
     if new_batch_name != batch_name:
         TemplatePayee.objects.filter(batch_name=batch_name).update(batch_name=new_batch_name)
@@ -355,12 +375,12 @@ def update_batch_excel(request, batch_name):
         "message": f"Batch '{batch_name}' updated successfully.",
         "updated_count": len(updated_records),
         "new_count": len(created_records),
+        "deleted_count": deleted_count,
         "errors": errors,
         "new_batch_name": new_batch_name,
         "updated_records": updated_records,
         "new_records": created_records
     }, status=200)
-
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
