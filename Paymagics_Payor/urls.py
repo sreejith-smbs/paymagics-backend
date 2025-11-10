@@ -21,7 +21,12 @@ urlpatterns = [
 
     #referrel
     path('referral/', send_invite_email, name='add_payee'),
-    path('add-payee/<str:referral_id>/', create_payee_via_referral, name='complete-payee-profile'),
+    # 1️⃣ Generate a one-time referral code (authenticated)
+    path('categories/<int:category_id>/referral-code/', create_category_referral_code, name='create_category_referral_code'),
+
+    # 2️⃣ Public endpoint — create a payee via referral code
+    path('payees/referral/<str:referral_code>/', create_payee_via_referral, name='create_payee_via_referral'),
+
 
     #list dashboard counts
     path("list_counts/",list_counts, name='list-counts'),

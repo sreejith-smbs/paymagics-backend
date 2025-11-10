@@ -805,22 +805,61 @@ def generate_unique_ben_code(length=8):
             return ben_code
 
 
+
+def generate_category_referral_code(category: Category, referrer: UserProfile = None):
+    """
+    Generates a one-time referral code linked to a specific Category.
+    Returns both the code and the referral link fragment.
+    """
+    referral = CategoryReferralCode.objects.create(category=category, referrer=referrer)
+    return {
+        "code": referral.code,
+        "category": category.category,
+        "referrer": referrer.id if referrer else None,
+        "created_at": referral.created_at,
+    }
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_category_referral_code(request, category_id):
+    """
+    API endpoint — Generate a one-time referral link for a Category.
+    Authenticated users can create invite links for Payees.
+    """
+    try:
+        category = Category.objects.get(id=category_id)
+    except Category.DoesNotExist:
+        return Response({"error": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    referrer_profile = request.user.profile  
+    data = generate_category_referral_code(category, referrer_profile)
+
+    return Response(data, status=status.HTTP_201_CREATED)
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @transaction.atomic
-def create_payee_via_referral(request, referral_id):
+def create_payee_via_referral(request, referral_code):
     """
-    Public API — Create a Payee using a Category's referral code.
+    Public API — Create a Payee using a one-time Category referral code.
     - No authentication required.
-    - ben_code auto-generated (unique)
-    - Validates banking fields based on payee_type
-    - Category found via referral_id
+    - Each CategoryReferralCode can only be used once.
     """
 
-    # 1️⃣ Get Category using referral_id
-    category = get_object_or_404(Category, referral_code=referral_id)
+    # 1️⃣ Validate and fetch referral record
+    try:
+        cat_ref = CategoryReferralCode.objects.select_related('category').get(code=referral_code)
+    except CategoryReferralCode.DoesNotExist:
+        return Response({"error": "Invalid or expired referral code."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 2️⃣ Validate request data
+    if cat_ref.is_used:
+        return Response({"error": "This referral link has already been used."}, status=status.HTTP_400_BAD_REQUEST)
+
+    category = cat_ref.category
+
+    # 2️⃣ Validate Payee input
     serializer = CreatePayeeSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -828,40 +867,34 @@ def create_payee_via_referral(request, referral_id):
     validated_data = serializer.validated_data
     payee_type = validated_data.get("payee_type", "DOMESTIC").upper()
 
-    # 3️⃣ Generate unique ben_code and referral_code
+    # 3️⃣ Generate codes
     ben_code = generate_unique_ben_code()
-    referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    new_referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-    # 4️⃣ Validate required banking fields
-    acc_no = validated_data.get("acc_no")
-    ifsc = validated_data.get("ifsc")
-    iban = validated_data.get("iban")
-    swift_code = validated_data.get("swift_code")
+    # 4️⃣ Validate banking fields
+    acc_no, ifsc, iban, swift = (
+        validated_data.get("acc_no"),
+        validated_data.get("ifsc"),
+        validated_data.get("iban"),
+        validated_data.get("swift_code"),
+    )
 
     if payee_type == "DOMESTIC":
         if not acc_no or not ifsc:
-            return Response({"error": "For Domestic payees, 'acc_no' and 'ifsc' are required."}, status=400)
-        validated_data["iban"] = None
-        validated_data["swift_code"] = None
-        validated_data["sort_code"] = None
-
+            return Response({"error": "Domestic payees need acc_no and ifsc."}, status=400)
+        validated_data.update({"iban": None, "swift_code": None, "sort_code": None})
     elif payee_type == "INTERNATIONAL":
-        if not iban or not swift_code:
-            return Response({"error": "For International payees, 'iban' and 'swift_code' are required."}, status=400)
-        validated_data["ifsc"] = None
-        validated_data["acc_no"] = None
-
+        if not iban or not swift:
+            return Response({"error": "International payees need iban and swift_code."}, status=400)
+        validated_data.update({"acc_no": None, "ifsc": None})
     else:
-        return Response({"error": "Invalid payee_type (use 'Domestic' or 'International')."}, status=400)
+        return Response({"error": "Invalid payee_type."}, status=400)
 
-    # 5️⃣ Check duplicate Payee by email (optional but recommended)
+    # 5️⃣ Prevent duplicate Payee
     if Payee.objects.filter(email=validated_data["email"], is_active=True).exists():
-        return Response(
-            {"error": f"A Payee with this email '{validated_data['email']}' already exists."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"error": "A Payee with this email already exists."}, status=400)
 
-    # 6️⃣ Create Payee object
+    # 6️⃣ Create Payee
     payee = Payee.objects.create(
         ben_code=ben_code,
         ben_name=validated_data["ben_name"],
@@ -881,14 +914,16 @@ def create_payee_via_referral(request, referral_id):
         bank_name=validated_data.get("bank_name"),
         branch=validated_data.get("branch"),
         bank_account_type=validated_data.get("bank_account_type"),
-        referralcode=referral_code,
-        payor=None  # No payor for public referral registration
+        referralcode=new_referral_code,
+        payor=cat_ref.referrer  # optional link to inviter
     )
 
-    # 7️⃣ Assign category to payee
     payee.categories.add(category)
 
-    # 8️⃣ Update category count (active payees only)
+    # 7️⃣ Mark referral as used
+    cat_ref.mark_used(payee)
+
+    # 8️⃣ Update category count
     category.count = Payee.objects.filter(categories=category, is_active=True).count()
     category.save()
 

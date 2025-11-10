@@ -52,22 +52,41 @@ class Payee(models.Model):
         return f"{self.ben_name} - {'Active' if self.is_active else 'Deleted'}"
 
 
-# class ReferralInvite(models.Model):
-#     STATUS_CHOICES = [
-#         ('pending', 'Pending'),
-#         ('clicked', 'Clicked'),
-#         ('completed', 'Completed'),
-#         ('expired', 'Expired'),
-#     ]
+import string, random
+from django.db import models
+from django.utils import timezone
 
-#     payor = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='sent_invites')
-#     payee_email = models.EmailField()
-#     referral_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-#     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
-#     created_at = models.DateTimeField(auto_now_add=True)
-#     updated_at = models.DateTimeField(auto_now=True)
+class CategoryReferralCode(models.Model):
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='referral_codes')
+    referrer = models.ForeignKey(
+        UserProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='generated_category_referrals'
+    )
+    code = models.CharField(max_length=10, unique=True)
+    is_used = models.BooleanField(default=False)
+    referred_payee = models.OneToOneField(
+        'Payee',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='used_category_referral'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    used_at = models.DateTimeField(null=True, blank=True)
 
-#     def __str__(self):
-#         return f"Invite from {self.payor.username} to {self.payee_email} [{self.status}]"
-      
+    def save(self, *args, **kwargs):
+        if not self.code:
+            self.code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        super().save(*args, **kwargs)
 
+    def mark_used(self, payee):
+        self.is_used = True
+        self.referred_payee = payee
+        self.used_at = timezone.now()
+        self.save()
+
+    def __str__(self):
+        return f"{self.category.category} | {self.code} ({'USED' if self.is_used else 'ACTIVE'})"
