@@ -506,89 +506,6 @@ def export_payees_excel(request, template_id):
 
 
 
-# #referrel
-# @api_view(["POST"])
-# @permission_classes([IsAuthenticated])
-# def send_invitation(request):
-#     try:
-#         payor_profile = UserProfile.objects.get(user=request.user)
-#     except UserProfile.DoesNotExist:
-#         return Response({"error": "Payor profile not found."}, status=400)
-
-#     email = request.data.get("email")
-#     if not email:
-#         return Response({"error": "Payee email is required."}, status=400)
-#     email = email.strip().lower()
-
-#     if email == payor_profile.user.email.lower():
-#         return Response({"error": "You cannot invite yourself."}, status=400)
-
-#     try:
-#         payee = Payee.objects.get(email=email, is_active=True)
-#     except Payee.DoesNotExist:
-#         return Response({"error": "Payee not found."}, status=400)
-
-#     invite, created = ReferralInvite.objects.get_or_create(
-#         payor=payor_profile,
-#         payee_email=email,
-#         defaults={
-#             "status": "pending",
-#             "referral_code": str(uuid.uuid4())
-#         }
-#     )
-
-#     if created:
-#         invite_link = request.build_absolute_uri(f"{invite.referral_code}/complete/")
-
-
-#         send_mail(
-#             subject="You've been invited!",
-#             message=f"Complete your profile here: {invite_link}",
-#             from_email=payor_profile.user.email,
-#             recipient_list=[email],
-#             fail_silently=False
-#         )
-
-#         return Response({"message": f"Invitation sent to {email}",
-#                          "referral_code":f"{invite.referral_code}"}, status=200)
-#     else:
-#         return Response({"message": f"Invitation already exists for {email}."}, status=200)
-
-#referrel clicked status conversion
-# @api_view(["GET"])
-# @permission_classes([AllowAny])
-# def referral_details(request, referral_code):
-#     invite = get_object_or_404(ReferralInvite, referral_code=referral_code)
-#     if invite.status == "pending":
-#         invite.status = "clicked"
-#         invite.save()
-
-#     return Response({
-#         "payee_email": invite.payee_email,
-#         "status": invite.status
-#     })
-
-# #referral - update payee profile
-# @api_view(["POST"])
-# @permission_classes([AllowAny])
-# def complete_payee_profile(request, referral_code):
-#     invite = get_object_or_404(ReferralInvite, referral_code=referral_code)
-
-#     try:
-#         payee = Payee.objects.get(email=invite.payee_email)
-#     except Payee.DoesNotExist:
-#         return Response({"error": "Payee profile not found."}, status=404)
-
-#     serializer = UpdatePayeeSerializer(payee, data=request.data, partial=True)
-
-#     if serializer.is_valid():
-#         serializer.save()
-#         invite.status = "completed"
-#         invite.save()
-#         return Response({"message": "Profile updated successfully."})
-
-#     return Response(serializer.errors, status=400)
-
 
 from django.db import transaction
 
@@ -639,7 +556,7 @@ def list_counts(request):
     ).filter(active_payees_count__gt=0).count()
 
     # Total payees
-    total_payees = Payee.objects.count()
+    total_payees = Payee.objects.filter(is_active=True).count()
 
     data = {
         "total_lists": total_categories,
@@ -741,69 +658,6 @@ from django.template.loader import render_to_string
 from django.conf import settings
 import json
 
-@csrf_exempt  # only for testing with Postman
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def send_invite_email(request):
-    try:
-        # Handle JSON or form POST
-        if request.content_type == "application/json":
-            data = json.loads(request.body)
-        else:
-            data = request.POST
-
-        recipient_email = data.get("email")
-        custom_msg = data.get("message", "You are invited!")
-        category = data.get("category")
-
-        if not recipient_email:
-            return Response({"status": "error", "message": "Email not provided"}, status=400)
-        if not category:
-            return Response({"status": "error", "message": "Category not provided"}, status=400)
-
-        # Get category and referral code
-        try:
-            cat = Category.objects.get(pk=category)
-            referral_code = cat.referral_code
-        except Category.DoesNotExist:
-            return Response({'error': 'Category not found.'}, status=404)
-
-        # Build referral link
-        frontend_base_url = "https://paymagics-frontend.vercel.app/invite"
-
-        # Construct the link with query parameter
-        referral_link = f"{frontend_base_url}?referral_code={referral_code}"
-
-        # Render HTML email template
-        message = render_to_string('referral_email.html', {
-            'referral_link': referral_link
-        })
-
-        # Send email
-        email = EmailMessage(
-            subject="Invitation to Join",
-            body=message,
-            from_email=settings.EMAIL_HOST_USER,
-            to=[recipient_email]
-        )
-        email.content_subtype = 'html'
-        email.send()
-
-        return Response({"status": "success", "message": f"Invite sent to {recipient_email}"})
-
-    except Exception as e:
-        return Response({"status": "error", "message": str(e)}, status=500)
-
-
-
-
-def generate_unique_ben_code(length=8):
-    """Generate a unique ben_code."""
-    while True:
-        ben_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
-        if not Payee.objects.filter(ben_code=ben_code).exists():
-            return ben_code
-
 
 
 def generate_category_referral_code(category: Category, referrer: UserProfile = None):
@@ -820,22 +674,85 @@ def generate_category_referral_code(category: Category, referrer: UserProfile = 
     }
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def create_category_referral_code(request, category_id):
+
+def create_category_referral_code(referrer_profile, category_id):
     """
-    API endpoint — Generate a one-time referral link for a Category.
-    Authenticated users can create invite links for Payees.
+    Helper — Generate a one-time referral link for a Category.
+    Returns the referral code string.
     """
     try:
         category = Category.objects.get(id=category_id)
     except Category.DoesNotExist:
-        return Response({"error": "Category not found."}, status=status.HTTP_404_NOT_FOUND)
+        return None
 
-    referrer_profile = request.user.profile  
     data = generate_category_referral_code(category, referrer_profile)
+    return data["code"]
 
-    return Response(data, status=status.HTTP_201_CREATED)
+
+
+@csrf_exempt  # only for testing with Postman
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_invite_email(request):
+    try:
+        # Handle JSON or form POST
+        if request.content_type == "application/json":
+            data = json.loads(request.body)
+        else:
+            data = request.POST
+
+        recipient_email = data.get("email")
+        custom_msg = data.get("message", "You are invited!")
+        category_id = data.get("category")
+
+        if not recipient_email:
+            return Response({"status": "error", "message": "Email not provided"}, status=400)
+        if not category_id:
+            return Response({"status": "error", "message": "Category not provided"}, status=400)
+
+        # ✅ Get logged-in user's profile
+        referrer_profile = request.user.profile
+
+        # ✅ Generate referral code (correctly)
+        referral_code = create_category_referral_code(referrer_profile, category_id)
+        if not referral_code:
+            return Response({'error': 'Category not found.'}, status=404)
+
+        # ✅ Build referral link
+        frontend_base_url = "https://paymagics-frontend.vercel.app/invite"
+        referral_link = f"{frontend_base_url}?referral_code={referral_code}"
+
+        # ✅ Render HTML email
+        message = render_to_string('referral_email.html', {
+            'referral_link': referral_link,
+            'custom_msg': custom_msg
+        })
+
+        # ✅ Send email
+        email = EmailMessage(
+            subject="Invitation to Join",
+            body=message,
+            from_email=settings.EMAIL_HOST_USER,
+            to=[recipient_email]
+        )
+        email.content_subtype = 'html'
+        email.send()
+
+        return Response({"status": "success", "message": f"Invite sent to {recipient_email}"})
+
+    except Exception as e:
+        return Response({"status": "error", "message": str(e)}, status=500)
+
+
+
+def generate_unique_ben_code(length=8):
+    """Generate a unique ben_code."""
+    while True:
+        ben_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=length))
+        if not Payee.objects.filter(ben_code=ben_code).exists():
+            return ben_code
+
+
 
 
 @api_view(["POST"])
@@ -929,3 +846,6 @@ def create_payee_via_referral(request, referral_code):
 
     # 9️⃣ Return created Payee
     return Response(PayeeSerializer(payee).data, status=status.HTTP_201_CREATED)
+
+
+
