@@ -1,10 +1,6 @@
 from rest_framework import serializers
 from .models import *
 
-class PayeeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Payee
-        fields = '__all__'
 
 class UpdatePayeeSerializer(serializers.ModelSerializer):
     ben_code = serializers.CharField(read_only=True)
@@ -70,3 +66,9 @@ class CreatePayeeSerializer(serializers.Serializer):
         return data
 
 
+
+class PayeeSerializer(serializers.ModelSerializer):
+    categories = CategorySerializer(many=True, read_only=True)
+    class Meta:
+        model = Payee
+        fields = '__all__'

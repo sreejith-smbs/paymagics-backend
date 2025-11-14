@@ -41,21 +41,62 @@ def templates(request):
         })
 
     elif request.method == 'POST':
-        name = request.data.get("name")
-        if PaymentTemplate.objects.filter(name=name).exists():
+        try:
+            name = request.data.get("name")
+            if not name:
+                return Response(
+                    {"error": "Template name is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            if PaymentTemplate.objects.filter(name=name).exists():
+                return Response(
+                    {"error": f"Template with name '{name}' already exists"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Initialize data safely
+            data = request.data.copy()
+            
+            # Get template_type - adjust this based on how you're receiving it
+            template_type = request.GET.get('type') or data.get('template_type')
+            if not template_type:
+                return Response(
+                    {"error": "Template type is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            data["template_type"] = template_type
+        
+            # Handle field_order safely
+            if 'field_order' in data:
+                field_order = data.get("field_order")
+                if field_order and isinstance(field_order, str):
+                    try:
+                        data["field_order"] = json.loads(field_order)
+                    except json.JSONDecodeError:
+                        return Response(
+                            {"error": "field_order must be a valid JSON array"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                # Ensure field_order is a list if provided
+                elif field_order and not isinstance(field_order, list):
+                    return Response(
+                        {"error": "field_order must be a list"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            serializer = PaymentTemplateSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save(created_by=request.user)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
             return Response(
-                {"error": f"Template with name '{name}' already exists"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": f"An error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-        data = request.data.copy()
-        data["template_type"] = template_type   
-
-        serializer = PaymentTemplateSerializer(data=data)
-        if serializer.is_valid():
-            serializer.save(created_by=request.user)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -71,7 +112,7 @@ def payment_template_detail(request, pk):
     elif request.method == 'PUT':
         serializer = PaymentTemplateSerializer(template, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save(created_by=request.user)
+            serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -145,16 +186,83 @@ def add_payees_to_template(request, template_id):
         )
         created_payees.append(template_payee)
 
-    serializer = TemplatePayeeSerializer(created_payees, many=True)
+
+
+
+    template_serializer = PaymentTemplateSerializer(template)
+    template_data = template_serializer.data
+
+    # Remove ordered_fields from template response if it exists
+    if 'ordered_fields' in template_data:
+        del template_data['ordered_fields']
+
+    response_payees = []
+    for template_payee in created_payees:
+        # Combine all data sources
+        combined_data = {}
+        
+        # Add payee basic details
+        if hasattr(template_payee, 'payee') and template_payee.payee:
+            payee = template_payee.payee
+            # Get the actual field names from template's dynamic_fields values
+            dynamic_fields_map = template.dynamic_fields or {}
+            
+            # Map payee fields to template field names dynamically
+            for template_field, payee_field in dynamic_fields_map.items():
+                if hasattr(payee, payee_field):
+                    combined_data[template_field] = getattr(payee, payee_field)
+        
+        # Add dynamic data (this contains the mapped values from above)
+        if template_payee.dynamic_data:
+            combined_data.update(template_payee.dynamic_data)
+        
+        # Add static data
+        if template_payee.static_data:
+            combined_data.update(template_payee.static_data)
+        
+        # Add options data
+        if template_payee.options_data:
+            combined_data.update(template_payee.options_data)
+        
+        # Apply field ordering - include ALL fields but order specified ones first
+        field_order = template.field_order or []
+        ordered_payee_details = {}
+        
+        if field_order:
+            # First, add fields that are in field_order (in the specified order)
+            for field_name in field_order:
+                if field_name in combined_data:
+                    ordered_payee_details[field_name] = combined_data[field_name]
+            
+            # Then, add any remaining fields that weren't in field_order
+            for field_name, value in combined_data.items():
+                if field_name not in ordered_payee_details:
+                    ordered_payee_details[field_name] = value
+        else:
+            # If no field_order, use the original order
+            ordered_payee_details = combined_data
+        
+        # Build the payee response object
+        payee_response = {
+            "id": template_payee.id,
+            "payee_details": ordered_payee_details,
+            "added_at": template_payee.added_at,
+            "template": template_payee.template.id,
+            "payee": template_payee.payee.id
+        }
+        
+        response_payees.append(payee_response)
+
     return Response({
-        "template": PaymentTemplateSerializer(template).data,
+        "template": template_data,
         "batch_name": batch_name,
-        "payees": serializer.data
+        "payees": response_payees
     }, status=status.HTTP_201_CREATED)
 
 
 
 # ----------------------------- download excel 
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def download_batch_excel(request, batch_name):
@@ -169,25 +277,43 @@ def download_batch_excel(request, batch_name):
     ws = wb.active
     ws.title = batch_name
 
-    dynamic_headers = list(template.dynamic_fields.keys()) if template.dynamic_fields else []
-    static_headers = list(template.static_fields.keys()) if template.static_fields else []
-    options_headers = list(template.options.keys()) if template.options else []
+    # Use field_order if available, otherwise fallback to default order
+    if template.field_order:
+        headers = template.field_order
+    else:
+        # Fallback to default order: dynamic -> static -> options
+        dynamic_headers = list(template.dynamic_fields.keys()) if template.dynamic_fields else []
+        static_headers = list(template.static_fields.keys()) if template.static_fields else []
+        options_headers = list(template.options.keys()) if template.options else []
+        headers = dynamic_headers + static_headers + options_headers
 
-    headers = dynamic_headers + static_headers + options_headers
-
+    # Write headers
     for col_num, header in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=col_num, value=header)
         cell.font = Font(bold=True)
 
+    # Write data rows
     for row_num, tp in enumerate(payees, start=2):
-        for col_num, h in enumerate(headers, start=1):
+        for col_num, header in enumerate(headers, start=1):
             value = ""
-            if tp.dynamic_data and h in tp.dynamic_data:
-                value = tp.dynamic_data[h]
-            elif tp.static_data and h in tp.static_data:
-                value = tp.static_data[h]
-            elif tp.options_data and h in tp.options_data:
-                value = tp.options_data[h]
+            
+            # Check dynamic data
+            if tp.dynamic_data and header in tp.dynamic_data:
+                value = tp.dynamic_data[header]
+            # Check static data
+            elif tp.static_data and header in tp.static_data:
+                value = tp.static_data[header]
+            # Check options data
+            elif tp.options_data and header in tp.options_data:
+                value = tp.options_data[header]
+            # Check payee model fields (for fields like ben_name, ben_code that are mapped via dynamic_fields)
+            elif hasattr(tp, 'payee') and tp.payee:
+                # Get the actual field name from template's dynamic_fields mapping
+                dynamic_fields_map = template.dynamic_fields or {}
+                for template_field, model_field in dynamic_fields_map.items():
+                    if template_field == header and hasattr(tp.payee, model_field):
+                        value = getattr(tp.payee, model_field)
+                        break
 
             # Convert lists or dicts to a string before writing
             if isinstance(value, (list, dict)):
@@ -195,7 +321,7 @@ def download_batch_excel(request, batch_name):
 
             ws.cell(row=row_num, column=col_num, value=value)
 
-
+    # Auto-adjust column widths
     for col_num, header in enumerate(headers, start=1):
         col_letter = get_column_letter(col_num)
         max_length = max(
@@ -209,7 +335,6 @@ def download_batch_excel(request, batch_name):
     response['Content-Disposition'] = f'attachment; filename="{batch_name}.xlsx"'
     wb.save(response)
     return response
-
 
 
 # ----------------------------- excel files

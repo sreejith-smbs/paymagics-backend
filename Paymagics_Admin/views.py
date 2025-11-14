@@ -438,8 +438,8 @@ def delete_payor_staff(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def admin_dashboard(request):
-    total_payors = UserProfile.objects.filter(role=UserRole.PAYOR, is_active=True).count()
-    total_payor_staff = UserProfile.objects.filter(role=UserRole.PAYOR_STAFF, is_active=True).count()
+    total_payors = UserProfile.objects.filter(role=UserRole.PAYOR, user__is_active=True).count()
+    total_payor_staff = UserProfile.objects.filter(role=UserRole.PAYOR_STAFF, user__is_active=True).count()
     total_payees = Payee.objects.filter(is_active=True).count()
 
     active_users = UserProfile.objects.filter(user__is_active=True).count()
@@ -499,6 +499,7 @@ def admin_dashboard(request):
     }
 
     return Response(data, status=200)
+
 
 # ------------------------ search users
 @api_view(["GET"])

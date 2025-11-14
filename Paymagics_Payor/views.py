@@ -407,6 +407,8 @@ def delete_categ(request, pk):
 
 
 #payee list export to excel based on template
+
+from openpyxl.styles import Font, Alignment
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def export_payees_excel(request, template_id):
@@ -452,10 +454,17 @@ def export_payees_excel(request, template_id):
     # 👉 Otherwise, export as Excel
     dynamic_fields = template.dynamic_fields or {}
     static_fields = template.static_fields or {}
+    options_fields = template.options or {}
 
-    dynamic_headers = list(dynamic_fields.keys())
-    static_headers = list(static_fields.keys())
-    headers = dynamic_headers + static_headers
+    # Use field_order if available, otherwise fallback to default order
+    if template.field_order:
+        headers = template.field_order
+    else:
+        # Fallback to default order: dynamic -> static -> options
+        dynamic_headers = list(dynamic_fields.keys())
+        static_headers = list(static_fields.keys())
+        options_headers = list(options_fields.keys())
+        headers = dynamic_headers + static_headers + options_headers
 
     wb = Workbook()
     ws = wb.active
@@ -465,6 +474,7 @@ def export_payees_excel(request, template_id):
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
     title_cell = ws.cell(row=1, column=1, value=f"Template: {template.name}")
     title_cell.font = Font(bold=True, size=14)
+    title_cell.alignment = Alignment(horizontal='center')
 
     # Headers
     for col_num, header in enumerate(headers, start=1):
@@ -474,11 +484,25 @@ def export_payees_excel(request, template_id):
     # Data
     for row_num, payee in enumerate(payees, start=3):
         for col_num, header in enumerate(headers, start=1):
+            value = ""
+            
+            # Check dynamic fields
             if header in dynamic_fields:
                 model_field = dynamic_fields[header]
                 value = getattr(payee, model_field, "")
-            else:
+            
+            # Check static fields
+            elif header in static_fields:
                 value = static_fields.get(header, "")
+            
+            # Check options fields
+            elif header in options_fields:
+                value = options_fields.get(header, "")
+            
+            # Convert lists or dicts to string for Excel
+            if isinstance(value, (list, dict)):
+                value = json.dumps(value)
+            
             ws.cell(row=row_num, column=col_num, value=value)
 
     # Auto column width
@@ -488,7 +512,7 @@ def export_payees_excel(request, template_id):
             len(str(ws.cell(row=row, column=col_num).value or "")) 
             for row in range(1, ws.max_row + 1)
         )
-        ws.column_dimensions[col_letter].width = max_length + 5
+        ws.column_dimensions[col_letter].width = min(max_length + 2, 50)  # Cap at 50 for readability
 
     file_stream = BytesIO()
     wb.save(file_stream)
@@ -503,6 +527,7 @@ def export_payees_excel(request, template_id):
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
 
 
 
