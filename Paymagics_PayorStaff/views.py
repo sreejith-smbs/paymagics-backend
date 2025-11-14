@@ -575,60 +575,79 @@ def selected_payees(request):
 
 from Paymagics_Payor.models import PaymentTemplate
  
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def fetch_payees_for_template(request):
- 
+
     template_id = request.data.get("template_id")
     if not template_id:
         return Response({"error": "template_id is required"}, status=status.HTTP_400_BAD_REQUEST)
- 
+
     try:
         template = PaymentTemplate.objects.get(id=template_id)
     except PaymentTemplate.DoesNotExist:
         return Response({"error": "Template not found"}, status=status.HTTP_404_NOT_FOUND)
- 
+
     payee_ids = request.data.get("payees", [])
     list_ids = request.data.get("lists", [])
- 
+
     # Combine manually selected payees and payees from lists
     all_payee_ids = set(payee_ids)
- 
+
     if list_ids:
         category_payees = Payee.objects.filter(
             categories__id__in=list_ids,
             is_active=True
         ).values_list("id", flat=True)
         all_payee_ids.update(category_payees)
- 
+
     if not all_payee_ids:
         return Response({"count": 0, "results": []})
- 
+
     queryset = Payee.objects.filter(id__in=all_payee_ids, is_active=True).distinct()
- 
+
     # Pagination
     paginator = PageNumberPagination()
     paginator.page_size = 15
     paginated_payees = paginator.paginate_queryset(queryset, request)
- 
+
     results = []
     for payee in paginated_payees:
-        payee_data = {}
- 
+        # First collect all data without ordering
+        all_data = {}
+
         # Dynamic fields from template
         for field_name, model_field in (template.dynamic_fields or {}).items():
-            payee_data[field_name] = getattr(payee, model_field, None)
- 
+            all_data[field_name] = getattr(payee, model_field, None)
+
         # Static fields from template
         for field_name, value in (template.static_fields or {}).items():
-            payee_data[field_name] = value
- 
+            all_data[field_name] = value
+
         # Options fields from template
         for field_name, options in (template.options or {}).items():
-            payee_data[field_name] = options
- 
+            all_data[field_name] = options
+
+        # Apply field ordering if available
+        payee_data = {}
+        if template.field_order:
+            # Add fields in the specified order first
+            for field_name in template.field_order:
+                if field_name in all_data:
+                    payee_data[field_name] = all_data[field_name]
+            
+            # Then add any remaining fields that weren't in field_order
+            for field_name, value in all_data.items():
+                if field_name not in payee_data:
+                    payee_data[field_name] = value
+        else:
+            # If no field_order, use the original order
+            payee_data = all_data
+
         results.append(payee_data)
- 
+
     # Build response
     response_data = {
         "template": {
@@ -638,14 +657,12 @@ def fetch_payees_for_template(request):
             "dynamic_fields": template.dynamic_fields or {},
             "static_fields": template.static_fields or {},
             "options": template.options or {},
+            "field_order": template.field_order or [],  # Include field_order in response
             "created_at": template.created_at,
             "created_by": template.created_by.id if template.created_by else None,
         },
         "count": queryset.count(),
         "results": results
     }
- 
+
     return Response(response_data)
- 
-
-
