@@ -1,6 +1,6 @@
 # Paymagics_PayorStaff/serializers.py
 from rest_framework import serializers
-from .models import PaymentTemplate, TemplatePayee, PaymentTemp  # <- already imported
+from .models import PaymentTemplate, TemplatePayee  
 
 class TemplatePayeeSerializer(serializers.ModelSerializer):
     payee_details = serializers.SerializerMethodField()
@@ -145,9 +145,5 @@ class PaymentTemplateSerializer(serializers.ModelSerializer):
 
 
 
-class PaymentTempSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PaymentTemp
-        fields = "__all__"
 
 

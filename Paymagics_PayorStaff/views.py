@@ -4,9 +4,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.http import HttpResponse
 from openpyxl import Workbook
-from .models import PaymentTemplate, TemplatePayee, PaymentTemp
+from .models import PaymentTemplate, TemplatePayee
 from Paymagics_Payor.models import Payee
-from .serializers import PaymentTemplateSerializer, TemplatePayeeSerializer, PaymentTempSerializer
+from .serializers import PaymentTemplateSerializer, TemplatePayeeSerializer
 from django.shortcuts import get_object_or_404
 from django.forms.models import model_to_dict
 from openpyxl import Workbook
@@ -666,3 +666,87 @@ def fetch_payees_for_template(request):
     }
 
     return Response(response_data)
+
+
+
+
+# Paymagics_PayorStaff/views.py
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .models import TemplatePayee
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_batch_payees(request, batch_name):
+    """Get batch payees in exact format with template field ordering"""
+    try:
+        # Get all template payees for this batch
+        template_payees = TemplatePayee.objects.filter(
+            batch_name=batch_name
+        ).select_related('template', 'payee')
+        
+        if not template_payees.exists():
+            return Response({
+                "error": f"No payees found for batch: {batch_name}"
+            }, status=404)
+        
+        # Get the template
+        template = template_payees.first().template
+        field_order = template.field_order or []
+        
+        results = []
+        for template_payee in template_payees:
+            payee = template_payee.payee
+            
+            # Build combined data from all sources
+            combined_data = {}
+            
+            # 1. Map payee fields through template's dynamic_fields
+            if template.dynamic_fields:
+                for template_field, model_field in template.dynamic_fields.items():
+                    if hasattr(payee, model_field):
+                        value = getattr(payee, model_field)
+                        if value is not None:
+                            combined_data[template_field] = value
+            
+            # 2. Add static data (overwrites mapped values if same field name)
+            if template_payee.static_data:
+                combined_data.update(template_payee.static_data)
+            
+            # 3. Add options data (overwrites if same field name)
+            if template_payee.options_data:
+                combined_data.update(template_payee.options_data)
+            
+            # Apply STRICT template field ordering
+            ordered_payee_details = {}
+            for field_name in field_order:
+                if field_name in combined_data:
+                    ordered_payee_details[field_name] = combined_data[field_name]
+            
+            # Add the ordered payee details directly (no nested "payee_details")
+            results.append(ordered_payee_details)
+        
+        # Build template data
+        template_data = {
+            "id": template.id,
+            "name": template.name,
+            "template_type": template.template_type,
+            "field_order": field_order,
+            "dynamic_fields": template.dynamic_fields or {},
+            "static_fields": template.static_fields or {},
+            "options": template.options or {}
+        }
+        
+        return Response({
+            "batch_name": batch_name,
+            "template": template_data,
+            "payee_count": len(results),
+            "payees": results  # Direct array of ordered field objects
+        })
+        
+    except Exception as e:
+        return Response({
+            "error": f"An error occurred: {str(e)}"
+        }, status=500)
+    
