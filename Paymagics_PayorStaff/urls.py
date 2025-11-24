@@ -15,4 +15,5 @@ urlpatterns = [
     path('template_payees/', views.fetch_payees_for_template, name='template-payees-data'),
      
     path('batch/<str:batch_name>/', views.get_batch_payees, name='batch-payees'),
+    path('upload_template/', views.upload_template, name='upload_template'),
 ]

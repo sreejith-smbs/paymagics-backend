@@ -21,6 +21,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.conf import settings
 from django.db.models import Q
+from rest_framework.pagination import PageNumberPagination
 
 # ---------------------- LOGIN SECTION ----------------------
 @api_view(["POST"])
@@ -284,8 +285,6 @@ def create_payor(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-from rest_framework.pagination import PageNumberPagination
-
 
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
@@ -294,7 +293,7 @@ def list_payors(request):
         role=UserRole.PAYOR,
         user__is_active=True, 
         is_confirmed=True
-    )
+    ).order_by('-id')
 
     total_count = queryset.count()  # 👈 Get total number of payors
 
@@ -388,20 +387,18 @@ def create_payor_staff(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-from rest_framework.pagination import PageNumberPagination
-
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_payor_staff(request):
     queryset = UserProfile.objects.filter(
         role=UserRole.PAYOR_STAFF,
         user__is_active=True
-    )
+    ).order_by('-id')
 
     total_count = queryset.count()  # Get total number of staff
 
     paginator = PageNumberPagination()
-    paginator.page_size = 10  
+    paginator.page_size = 15
     paginated_queryset = paginator.paginate_queryset(queryset, request)
 
     serializer = UserProfileSerializer(paginated_queryset, many=True)

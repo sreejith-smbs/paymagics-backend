@@ -17,7 +17,9 @@ from django.utils import timezone
 from django.urls import reverse
 from rest_framework.pagination import PageNumberPagination
 import json
-
+from openpyxl import load_workbook
+from django.db import transaction
+from datetime import datetime
 
 
 # -----------------------------PaymentTemplate Views
@@ -31,7 +33,7 @@ def templates(request):
         return Response({"error": "Invalid or missing template type"}, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'GET':
-        templates = PaymentTemplate.objects.filter(template_type=template_type)
+        templates = PaymentTemplate.objects.filter(template_type=template_type).order_by('-id')
         total_count = templates.count()  
         serializer = PaymentTemplateSerializer(templates, many=True)
  
@@ -359,6 +361,7 @@ def list_batches(request):
                 reverse("download_batch_excel", args=[batch["batch_name"]])
             )
         })
+    data.reverse()
 
     paginator = PageNumberPagination()
     paginator.page_size = 15
@@ -506,6 +509,132 @@ def update_batch_excel(request, batch_name):
         "updated_records": updated_records,
         "new_records": created_records
     }, status=200)
+
+
+
+# @api_view(['PUT'])
+# @permission_classes([IsAuthenticated])
+# def update_batch_excel(request, batch_name):
+#     data = request.data
+#     template_id = data.get("template_id")
+#     records = data.get("records", [])
+#     new_batch_name = data.get("new_batch_name", batch_name)
+
+#     if not template_id:
+#         return Response({"error": "Template ID required."}, status=400)
+#     if not isinstance(records, list) or not records:
+#         return Response({"error": "records must be a non-empty list."}, status=400)
+
+#     try:
+#         template = PaymentTemplate.objects.get(id=template_id)
+#     except PaymentTemplate.DoesNotExist:
+#         return Response({"error": "Template not found."}, status=404)
+
+#     payees_qs = TemplatePayee.objects.filter(batch_name=batch_name)
+#     existing_payee_ids = list(payees_qs.values_list("payee_id", flat=True))
+
+#     updated_records = []
+#     created_records = []
+#     errors = []
+
+#     incoming_payee_ids = []
+
+#     for rec in records:
+#         payee_id = rec.get("payee_id")
+#         static_fields = rec.get("static_fields", {})
+#         options_selection = rec.get("options_selection", {})
+
+#         if not payee_id:
+#             errors.append({"error": "Missing payee_id in record."})
+#             continue
+
+#         incoming_payee_ids.append(payee_id)
+
+#         try:
+#             payee = Payee.objects.get(id=payee_id)
+#         except Payee.DoesNotExist:
+#             errors.append({"payee_id": payee_id, "error": "Invalid payee_id"})
+#             continue
+
+#         if payee_id in existing_payee_ids:
+#             # Update existing TemplatePayee
+#             tp = payees_qs.get(payee_id=payee_id)
+
+#             # Update dynamic data from template fields
+#             dynamic_fields_map = template.dynamic_fields or {}
+#             for header, model_field in dynamic_fields_map.items():
+#                 tp.dynamic_data[header] = getattr(payee, model_field, "")
+
+#             # Update static data
+#             tp.static_data.update(static_fields or template.static_fields or {})
+
+#             # Update options data
+#             if options_selection:
+#                 for key, value in options_selection.items():
+#                     if key in (template.options or {}):
+#                         tp.options_data[key] = value
+#             else:
+#                 tp.options_data.update(template.options or {})
+
+#             # Update template reference
+#             tp.template = template
+#             tp.save()
+
+#             updated_records.append(TemplatePayeeSerializer(tp).data)
+
+#         else:
+#             # Create new TemplatePayee
+#             payee_dict = model_to_dict(payee)
+#             dynamic_fields_map = template.dynamic_fields or {}
+#             dynamic_data = {
+#                 header: payee_dict.get(model_field)
+#                 for header, model_field in dynamic_fields_map.items()
+#                 if model_field in payee_dict
+#             }
+
+#             static_data = static_fields or template.static_fields or {}
+#             options_data = options_selection or template.options or {}
+
+#             new_tp = TemplatePayee.objects.create(
+#                 template=template,
+#                 payee=payee,
+#                 dynamic_data=dynamic_data,
+#                 static_data=static_data,
+#                 options_data=options_data,
+#                 batch_name=batch_name
+#             )
+
+#             created_records.append(TemplatePayeeSerializer(new_tp).data)
+
+#     # Delete payees not present in the new records
+#     payees_to_delete = payees_qs.exclude(payee_id__in=incoming_payee_ids)
+#     deleted_count = payees_to_delete.count()
+#     payees_to_delete.delete()
+
+#     # Update filename if batch name changed
+#     if new_batch_name != batch_name:
+#         TemplatePayee.objects.filter(batch_name=batch_name).update(batch_name=new_batch_name)
+        
+#         # Update filename for all records in the batch
+#         batch_records = TemplatePayee.objects.filter(batch_name=new_batch_name)
+#         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+#         new_filename = f"{new_batch_name}_{timestamp}.xlsx"
+        
+#         for record in batch_records:
+#             record.filename = new_filename
+#             record.save()
+
+#     return Response({
+#         "message": f"Batch '{batch_name}' updated successfully.",
+#         "updated_count": len(updated_records),
+#         "new_count": len(created_records),
+#         "deleted_count": deleted_count,
+#         "errors": errors,
+#         "new_batch_name": new_batch_name,
+#         "updated_records": updated_records,
+#         "new_records": created_records
+#     }, status=200)
+
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
@@ -670,11 +799,6 @@ def fetch_payees_for_template(request):
 
 
 
-# Paymagics_PayorStaff/views.py
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from .models import TemplatePayee
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -750,3 +874,139 @@ def get_batch_payees(request, batch_name):
             "error": f"An error occurred: {str(e)}"
         }, status=500)
     
+
+
+
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_template(request):
+    """
+    Upload an Excel file and auto-generate a PaymentTemplate.
+    Uses openpyxl.
+    """
+    file = request.FILES.get("file")
+    template_name = request.data.get("template_name")
+    template_type = request.data.get("template_type", "payment")
+
+    if not file:
+        return Response({"error": "Excel file is required"}, status=400)
+
+    if not template_name:
+        return Response({"error": "template_name is required"}, status=400)
+
+    try:
+        wb = load_workbook(file)
+        sheet = wb.active
+    except Exception as e:
+        return Response({"error": f"Invalid Excel file: {str(e)}"}, status=400)
+
+    # ------------------------------------
+    # READ HEADER ROW
+    # ------------------------------------
+    headers = []
+    for cell in sheet[1]:
+        if cell.value:
+            headers.append(str(cell.value).strip().replace(" ", "_").lower())
+
+    if not headers:
+        return Response({"error": "Excel has no headers"}, status=400)
+
+    # ------------------------------------
+    # READ ALL DATA ROWS INTO A LIST
+    # ------------------------------------
+    rows = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if all(v is None for v in row):
+            continue
+        row_dict = {}
+        for i, col in enumerate(headers):
+            row_dict[col] = row[i]
+        rows.append(row_dict)
+
+    if not rows:
+        return Response({"error": "Excel has no data rows"}, status=400)
+
+    payee_fields = set([f.name for f in Payee._meta.fields])
+
+    dynamic_fields = {}
+    static_fields = {}
+    option_fields = {}
+    field_order = headers.copy()
+
+    # ------------------------------------
+    # CLASSIFY EACH COLUMN
+    # ------------------------------------
+   
+
+    for col in headers:
+        values = [row[col] for row in rows if row[col] is not None]
+        unique_values = list(set(values))
+        unique_count = len(unique_values)
+
+        # CASE 1
+        if col in payee_fields:
+            dynamic_fields[col] = col
+            continue
+
+        # CASE 2 
+        if template_type == "payment":
+
+            # Static field (only one value)
+            if unique_count == 1:
+                static_fields[col] = str(unique_values[0])
+                continue
+
+            # Options field (2–5 values)
+            if 2 <= unique_count <= 4:
+                option_fields[col] = [str(v) for v in unique_values]
+                continue
+
+            # More than 5 values → treat as static 
+            static_fields[col] = str(rows[0].get(col))
+            continue
+
+        # CASE 3 
+        else:
+            # For non-payment templates → ALL fields treated as static
+            static_fields[col] = str(rows[0].get(col)) if unique_values else None
+            continue
+
+
+    # ------------------------------------
+    # CREATE TEMPLATE 
+    # ------------------------------------
+    try:
+        with transaction.atomic():
+
+            template = PaymentTemplate.objects.create(
+                name=template_name,
+                template_type=template_type,
+                dynamic_fields=dynamic_fields or None,
+                static_fields=static_fields or None,
+                options=option_fields or None,
+                field_order=field_order,
+                created_by=request.user
+            )
+
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=400)
+
+    # ------------------------------------
+    # RESPONSE
+    # ------------------------------------
+    return Response({
+        "message": "Template created successfully",
+        "template_id": template.id,
+        "template_name": template.name,
+        "dynamic_fields": dynamic_fields,
+        "static_fields": static_fields,
+        "option_fields": option_fields,
+        "field_order": field_order
+    }, status=201)
+
+
+

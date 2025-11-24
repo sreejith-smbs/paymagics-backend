@@ -11,7 +11,7 @@ from rest_framework.pagination import PageNumberPagination
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def view_banks(request):
-    banks = Bank.objects.filter(is_active=True)
+    banks = Bank.objects.filter(is_active=True).order_by('-id')
 
     paginator = PageNumberPagination()
     paginator.page_size = 15

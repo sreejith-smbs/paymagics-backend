@@ -21,6 +21,11 @@ from django.utils import timezone
 from django.db.models import Count, Q
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from django.db import transaction
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from django.conf import settings
+import json
 
 
 
@@ -346,7 +351,7 @@ def delete_payee(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def payee_list(request):
-    queryset = Payee.objects.filter(is_active=True)
+    queryset = Payee.objects.filter(is_active=True).order_by('-id')
     total_count = queryset.count()  # total active payees
 
     paginator = PageNumberPagination()
@@ -377,7 +382,7 @@ def payee_detail(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def view_list(request):
-    queryset = Category.objects.all()
+    queryset = Category.objects.all().order_by('-id')
     total_count = queryset.count()  
 
     serializer = CategorySerializer(queryset, many=True)
@@ -407,11 +412,9 @@ def delete_categ(request, pk):
 
 
 #payee list export to excel based on template
-
-from openpyxl.styles import Font, Alignment
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
-def export_payees_excel(request, template_id):
+def export_payees_excel(request, template_id):   
     # Handle GET vs POST inputs
     if request.method == "GET":
         query = request.GET.get("q", "")
@@ -468,21 +471,16 @@ def export_payees_excel(request, template_id):
 
     wb = Workbook()
     ws = wb.active
-    ws.title = template.name or "Payee Export"
-
-    # Add template name
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
-    title_cell = ws.cell(row=1, column=1, value=f"Template: {template.name}")
-    title_cell.font = Font(bold=True, size=14)
-    title_cell.alignment = Alignment(horizontal='center')
+    # Remove the worksheet title
+    # ws.title = template.name or "Payee Export"
 
     # Headers
     for col_num, header in enumerate(headers, start=1):
-        cell = ws.cell(row=2, column=col_num, value=header)
+        cell = ws.cell(row=1, column=col_num, value=header)
         cell.font = Font(bold=True)
 
     # Data
-    for row_num, payee in enumerate(payees, start=3):
+    for row_num, payee in enumerate(payees, start=2):
         for col_num, header in enumerate(headers, start=1):
             value = ""
             
@@ -519,7 +517,8 @@ def export_payees_excel(request, template_id):
     file_stream.seek(0)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{template.name}_payees_export_{timestamp}.xlsx"
+    # Remove template name from filename
+    filename = f"payees_export_{timestamp}.xlsx"
 
     response = HttpResponse(
         file_stream.getvalue(),
@@ -528,11 +527,6 @@ def export_payees_excel(request, template_id):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
-
-
-
-
-from django.db import transaction
 
 
 def generate_unique_ben_code():
@@ -567,7 +561,7 @@ def payees_in_list(request, category):
 
 
 
-
+   
 #dashboard -payee
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -674,14 +668,6 @@ def remove_payee_from_category(request):
 
 
 
-
-
-
-
-from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
-from django.conf import settings
-import json
 
 
 
