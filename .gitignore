@@ -3,6 +3,7 @@
 # Only ignore auto-generated temp migration files
 migrations/**/.*~
 migrations/**/tmp_*.py
+migrations/**/__pycache__/
 
 # Environment files
 .env
