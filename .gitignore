@@ -1,29 +1,25 @@
-db.sqlite3
-
 
 # Migration files
-Paymagics_Admin/migrations/*.py
-Paymagics_Admin/migrations/__pycache__/*.pyc
+mirgations/
+*/migrations/
+/migrations/*
 
-Paymagics_Payor/migrations/*.py
-Paymagics_Payor/migrations/__pycache__/*.pyc
-
-Paymagics_PayorStaff/migrations/*.py
-Paymagics_PayorStaff/migrations/__pycache__/*.pyc
-
-Bank/migrations/*.py
-Bank/migrations/__pycache__/*.pyc
-
+# Environment files
 .env
 .venv/
 venv/
+
+# Python cache files
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.swp
+
+# IDE files
 .DS_Store
 .idea/
 .vscode/
 *.logs
 logs/
+*.sqlite3
