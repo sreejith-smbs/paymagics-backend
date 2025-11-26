@@ -2,13 +2,7 @@ from pathlib import Path
 from datetime import timedelta
 from decouple import config
 
-from environ import Env
-
-env = Env()
-
-Env.read_env()
-
-FRONTEND_BASE_URL = "http://localhost:3000"
+FRONTEND_BASE_URL = config('FRONTEND_BASE_URL', default='http://localhost:3000')
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -49,16 +43,20 @@ INSTALLED_APPS = [
     'boss_connection',
 ]
 
+MODULE_NAME = config('MODULE_NAME')
+MODILE_API_KEY = config('MODULE_API_KEY')
+
+
 MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "paymagics.middleware.TenantMiddleware",
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -93,8 +91,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'paymagics.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 """
 DATABASES = {
     'default': {

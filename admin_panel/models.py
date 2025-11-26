@@ -32,7 +32,9 @@ class UserProfile(models.Model):
         null=True,
         related_name="staff_members"
     )
- 
+
+    company_id = models.IntegerField(null=True, blank=True)
+    is_module_user = models.BooleanField(default=False,null=True,blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
  

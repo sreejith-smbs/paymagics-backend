@@ -5,10 +5,7 @@ from django.core.cache import cache
 from django.conf import settings
 from rest_framework_simplejwt.backends import TokenBackend
 from rest_framework_simplejwt.exceptions import TokenError
-import environ
-
-env = environ.Env()
-environ.Env.read_env()
+from decouple import config
 
 
 class TenantMiddleware:
@@ -130,12 +127,12 @@ class TenantMiddleware:
         Switch to original MySQL configuration for HireMagics standalone
         """
         original_default = {
-            'ENGINE': env('HIREMAGICS_DB_ENGINE', default='django.db.backends.mysql'),
-            'NAME': env('HIREMAGICS_DB_NAME', default='hiremagics_default'),
-            'USER': env('HIREMAGICS_DB_USER', default=''),
-            'PASSWORD': env('HIREMAGICS_DB_PASSWORD', default=''),
-            'HOST': env('HIREMAGICS_DB_HOST', default='localhost'),
-            'PORT': env('HIREMAGICS_DB_PORT', default='3306'),
+            'ENGINE': config('DB_ENGINE', default='django.db.backends.mysql'),
+            'NAME': config('DB_NAME', default='hiremagics_default'),
+            'USER': config('DB_USER', default=''),
+            'PASSWORD': config('DB_PASSWORD', default=''),
+            'HOST': config('DB_HOST', default='localhost'),
+            'PORT': config('DB_PORT', default='3306'),
             'OPTIONS': {
                 'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             },
