@@ -2,7 +2,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
-from Paymagics_Admin.models import *
+from admin_panel.models import *
 from .models import Bank
 from .serializers import BankSerializer
 from django.db.models import Q

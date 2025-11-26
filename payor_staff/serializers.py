@@ -1,4 +1,4 @@
-# Paymagics_PayorStaff/serializers.py
+
 from rest_framework import serializers
 from .models import PaymentTemplate, TemplatePayee  
 

@@ -8,11 +8,11 @@ from rest_framework.response import Response
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from .models import UserProfile, UserRole
-from Paymagics_Payor.models import Payee, Category
-from Paymagics_Payor.serializers import PayeeSerializer, CategorySerializer
+from payors.models import Payee, Category
+from payors.serializers import PayeeSerializer, CategorySerializer
 from .serializers import CreatePayorSerializer, UserProfileSerializer, CreatePayorStaffSerializer, PasswordResetConfirmSerializer, PasswordResetRequestSerializer
 from django.contrib.auth.hashers import make_password
-from Paymagics_PayorStaff.models import  PaymentTemplate
+from payor_staff.models import  PaymentTemplate
 from django.contrib.sessions.models import Session
 from django.utils import timezone
 from django.contrib.auth.tokens import PasswordResetTokenGenerator

@@ -18,10 +18,14 @@ SECRET_KEY = 'django-insecure-goy37xwr)!(&i)ey#q2b9^g@^4o90uzf+a3ds023k(wgbhzto4
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['35.154.70.132', 'localhost', '127.0.0.1', 'api.paymagics.com', 'paymagics.com']
+ALLOWED_HOSTS = [
+    '35.154.70.132', 
+    'localhost', 
+    '127.0.0.1', 
+    'api.paymagics.com', 
+    'paymagics.com'
+]
 
-
-# Application definition
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -30,14 +34,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'Paymagics_Admin',
-    'Paymagics_Payor',
-    'Paymagics_PayorStaff',
-    'rest_framework',
+
+    # Third Party Apps
     'corsheaders',
+    'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'django_filters',
-    'Bank',
+
+    # Local Apps
+    'admin_panel',
+    'payors',
+    'payor_staff',
+    'bank_partner',
 ]
 
 REST_FRAMEWORK = {
@@ -74,7 +82,7 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-ROOT_URLCONF = 'Paymagics_API.urls'
+ROOT_URLCONF = 'paymagics.urls'
 
 TEMPLATES = [
     {
@@ -92,7 +100,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'Paymagics_API.wsgi.application'
+WSGI_APPLICATION = 'paymagics.wsgi.application'
 
 
 # Database
@@ -179,10 +187,10 @@ SIMPLE_JWT = {
 }
 
 
-EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
-EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
-EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
-EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
+# EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+# EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+# EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+# EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+# EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+# EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+# DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)

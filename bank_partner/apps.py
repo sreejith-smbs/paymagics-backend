@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class PaymagicsAdminConfig(AppConfig):
+class BankPartnerConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'Paymagics_Admin'
+    name = 'bank_partner'

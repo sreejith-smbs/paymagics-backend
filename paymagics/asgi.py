@@ -1,5 +1,5 @@
 """
-ASGI config for Paymagics_API project.
+ASGI config for paymagics project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -11,6 +11,6 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Paymagics_API.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'paymagics.settings')
 
 application = get_asgi_application()

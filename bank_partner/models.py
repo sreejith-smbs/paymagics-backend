@@ -2,7 +2,7 @@ from django.db import models
 
 # Create your models here.
 from django.db import models
-from Paymagics_Admin.models import UserProfile 
+from admin_panel.models import UserProfile 
 
 
 class Bank(models.Model):

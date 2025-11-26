@@ -1,7 +1,7 @@
 from django.db import models
-from Paymagics_Admin.models import UserProfile
+from admin_panel.models import UserProfile
 import uuid
-from Paymagics_PayorStaff.models import *
+from payors.models import *
 
 class Category(models.Model):
     category = models.CharField(max_length=55, unique=True)

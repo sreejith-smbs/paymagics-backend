@@ -3,7 +3,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework.response import Response
 from .serializers import *
 from .models import *
-from Paymagics_Admin.models import UserProfile, UserRole
+from admin_panel.models import UserProfile, UserRole
 import random, string
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
@@ -16,7 +16,7 @@ from django.core.mail import send_mail
 import uuid
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
-from Paymagics_PayorStaff.models import PaymentTemplate
+from payor_staff.models import PaymentTemplate
 from django.utils import timezone
 from django.db.models import Count, Q
 from openpyxl import Workbook

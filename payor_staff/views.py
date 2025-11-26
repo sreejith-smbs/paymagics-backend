@@ -5,7 +5,7 @@ from rest_framework import status
 from django.http import HttpResponse
 from openpyxl import Workbook
 from .models import PaymentTemplate, TemplatePayee
-from Paymagics_Payor.models import Payee
+from payors.models import Payee
 from .serializers import PaymentTemplateSerializer, TemplatePayeeSerializer
 from django.shortcuts import get_object_or_404
 from django.forms.models import model_to_dict
@@ -667,7 +667,7 @@ def payment_template_options(request, template_id):
     })
 
 
-from Paymagics_Payor.serializers import PayeeSerializer
+from payors.serializers import PayeeSerializer
  
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -702,7 +702,7 @@ def selected_payees(request):
     serializer = PayeeSerializer(paginated_payees, many=True)
     return paginator.get_paginated_response(serializer.data)
 
-from Paymagics_Payor.models import PaymentTemplate
+from payor_staff.models import PaymentTemplate
  
 
 

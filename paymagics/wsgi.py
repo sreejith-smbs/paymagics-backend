@@ -1,5 +1,5 @@
 """
-WSGI config for Paymagics_API project.
+WSGI config for paymagics project.
 
 It exposes the WSGI callable as a module-level variable named ``application``.
 
@@ -11,6 +11,6 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Paymagics_API.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'paymagics.settings')
 
 application = get_wsgi_application()

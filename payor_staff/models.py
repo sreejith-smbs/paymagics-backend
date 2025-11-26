@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-from Paymagics_Admin.models import UserProfile
+from admin_panel.models import UserProfile
 
 
 class PaymentTemplate(models.Model):
@@ -109,7 +109,7 @@ class PaymentTemplate(models.Model):
 
 class TemplatePayee(models.Model):
     template = models.ForeignKey(PaymentTemplate, on_delete=models.CASCADE, related_name="payees")
-    payee = models.ForeignKey('Paymagics_Payor.Payee', on_delete=models.CASCADE)
+    payee = models.ForeignKey('payors.Payee', on_delete=models.CASCADE)
 
     batch_name = models.CharField(max_length=150, blank=True, null=True)
 
