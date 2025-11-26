@@ -1,21 +1,27 @@
-# celery.py
 
 import os
 from celery import Celery
 from django.conf import settings
-from celery.signals import worker_process_init, worker_process_shutdown, task_prerun, task_postrun
+from celery.signals import (
+    worker_process_init,
+    worker_process_shutdown,
+    task_prerun,
+    task_postrun,
+)
 
-# Set the default Django settings module
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Hiremagics_Project.settings')
+# Set default Django settings module for Celery
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "paymagics.settings")
 
-# Fix for macOS forking issue
-if os.name == 'posix':
-    os.environ.setdefault('OBJC_DISABLE_INITIALIZE_FORK_SAFETY', 'YES')
+# Fix macOS fork issue
+if os.name == "posix":
+    os.environ.setdefault("OBJC_DISABLE_INITIALIZE_FORK_SAFETY", "YES")
 
-app = Celery('Hiremagics_Project')
-app.config_from_object('django.conf:settings', namespace='CELERY')
+app = Celery("paymagics")
 
-# Autodiscover tasks from installed apps
+# Load Celery settings from Django settings using `CELERY_` prefix
+app.config_from_object("django.conf:settings", namespace="CELERY")
+
+# Auto-discover task files inside installed apps
 app.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
 
