@@ -1,8 +1,8 @@
 
-# Migration files
-mirgations/
-*/migrations/
-/migrations/*
+# DO NOT IGNORE Django migrations
+# Only ignore auto-generated temp migration files
+migrations/**/.*~
+migrations/**/tmp_*.py
 
 # Environment files
 .env
@@ -11,6 +11,7 @@ venv/
 
 # Python cache files
 __pycache__/
+*/__pycache__/
 *.pyc
 *.pyo
 *.pyd
