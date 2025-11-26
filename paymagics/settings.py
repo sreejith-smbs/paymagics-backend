@@ -38,10 +38,10 @@ INSTALLED_APPS = [
 
     # Local Apps
     'admin_panel',
-    'payors',
-    'payor_staff',
     'bank_partner',
     'boss_connection',
+    'payor_staff',
+    'payors',
 ]
 
 MODULE_NAME = config('MODULE_NAME')
