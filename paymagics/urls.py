@@ -7,4 +7,5 @@ urlpatterns = [
     path('api/payor/', include('payors.urls')),
     path('api/payorstaff/', include('payor_staff.urls')),
     path('api/bank/', include('bank_partner.urls')),
+    path('api/migrate/', include('boss_connection.urls')),
 ]
