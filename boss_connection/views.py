@@ -8,9 +8,6 @@ from .permissions import ModuleAPIKeyPermission
 from .tasks import run_migration_task
 
 from django.conf import settings
-print(settings.MODULE_NAME)
-print("new api key:")
-print(settings.MODULE_API_KEY)
 
 class MigrateView(views.APIView):
     """

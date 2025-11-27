@@ -6,7 +6,8 @@ from django.conf import settings
 from rest_framework_simplejwt.backends import TokenBackend
 from rest_framework_simplejwt.exceptions import TokenError
 from decouple import config
-
+print(config('DB_NAME'))
+print("my sql name")
 
 class TenantMiddleware:
     """
@@ -127,10 +128,10 @@ class TenantMiddleware:
         Switch to original MySQL configuration for HireMagics standalone
         """
         original_default = {
-            'ENGINE': config('DB_ENGINE', default='django.db.backends.mysql'),
-            'NAME': config('DB_NAME', default='hiremagics_default'),
-            'USER': config('DB_USER', default=''),
-            'PASSWORD': config('DB_PASSWORD', default=''),
+            'ENGINE': config('DB_ENGINE'),
+            'NAME': config('DB_NAME'),
+            'USER': config('DB_USER'),
+            'PASSWORD': config('DB_PASSWORD'),
             'HOST': config('DB_HOST', default='localhost'),
             'PORT': config('DB_PORT', default='3306'),
             'OPTIONS': {
@@ -166,6 +167,7 @@ class TenantMiddleware:
 
                 if data and len(data) > 0:
                     db_config = data[0]
+                    print(db_config['name'])
                     print(f"📦 API Response - DB: {db_config.get('name')}, Host: {db_config.get('host')}")
 
                     # Create PostgreSQL configuration
