@@ -38,10 +38,10 @@ INSTALLED_APPS = [
 
     # Local Apps
     'admin_panel',
-    'payors',
-    'payor_staff',
     'bank_partner',
     'boss_connection',
+    'payor_staff',
+    'payors',
 ]
 
 MODULE_NAME = config('MODULE_NAME')
@@ -179,8 +179,8 @@ SIMPLE_JWT = {
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "boss_connection.authentication.CustomJWTAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
@@ -204,7 +204,7 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "KEY_PREFIX": "hiremagics"
+            "KEY_PREFIX": "paymagics"
         }
     }
 }
