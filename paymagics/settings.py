@@ -2,6 +2,8 @@ from pathlib import Path
 from datetime import timedelta
 from decouple import config
 import os
+import pymysql
+pymysql.install_as_MySQLdb()
 
 FRONTEND_BASE_URL = config('FRONTEND_BASE_URL', default='http://localhost:3000')
 
@@ -44,12 +46,14 @@ INSTALLED_APPS = [
     'payors',
 ]
 
+DATABASE_ROUTERS = ['paymagics.routers.AdminRouter']
 MODULE_NAME = config('MODULE_NAME')
 MODULE_API_KEY = config('MODULE_API_KEY')
 
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "paymagics.middleware.TenantMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -57,7 +61,6 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "paymagics.middleware.TenantMiddleware",
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -91,15 +94,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'paymagics.wsgi.application'
 
-
-"""
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
-"""
 
 DATABASES = {
     'default': {
@@ -231,6 +225,8 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
     'health_check_interval': 10,
     'max_retries': 3,
 }
+
+CORS_ALLOW_ALL_ORIGINS = True 
 
 # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 

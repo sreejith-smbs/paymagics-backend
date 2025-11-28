@@ -40,18 +40,10 @@ class TenantMiddleware:
         print(request.META)
         error_stream = request.META.get("wsgi.errors")
         print(error_stream)
-        if error_stream:
-            error_stream.write("🔴 Debug: Authorization header missing or invalid\n")
-            error_stream.flush()
         print(request.META.get("HTTP_AUTHORIZATION", ""))
         # 2) Extract & decode raw JWT for API requests
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         company_id = None
-
-        # # 0) Bypass tenant middleware for migration endpoint
-        # if request.path == "/api/migrate/":
-        #     print("⚙️ Bypassing middleware → Migration request")
-        #     return self.get_response(request)
 
         print(f"🔍 Authorization header: {auth}")
         print(auth.startswith("Bearer "))

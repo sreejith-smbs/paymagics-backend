@@ -12,6 +12,7 @@ class CustomJWTAuthentication(JWTAuthentication):
     If no company_id, assume user is from default MySQL database.
     """
     def get_user(self, validated_token):
+        print("CustomJWTAuthentication.get_user called.......")
         p = validated_token.payload
         user_id = p.get("user_id")
         company_id = p.get("company_id")
