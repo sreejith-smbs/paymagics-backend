@@ -38,6 +38,8 @@ class TenantMiddleware:
         print("===========")
         print(request.path)
         print(request.META)
+        error_stream = request.META.get("wsgi.errors")
+        print(error_stream)
         print(request.META.get("HTTP_AUTHORIZATION", ""))
         # 2) Extract & decode raw JWT for API requests
         auth = request.META.get("HTTP_AUTHORIZATION", "")
