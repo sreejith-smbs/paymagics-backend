@@ -29,7 +29,7 @@ class TenantMiddleware:
 
     def __call__(self, request):
         # 1) Admin pages and login endpoint must use default MySQL database
-        login_paths = ["/api/hr/login", "/api/hr/login/"]
+        login_paths = ["/api/admin/login", "/api/admin/login/"]
         if request.path in login_paths or request.path.startswith("/admin"):
             print("🔐 HR Login/Admin → forcing MySQL default DB")
             self._switch_to_mysql_default()
@@ -39,6 +39,15 @@ class TenantMiddleware:
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         company_id = None
 
+        # # 0) Bypass tenant middleware for migration endpoint
+        # if request.path == "/api/migrate/":
+        #     print("⚙️ Bypassing middleware → Migration request")
+        #     return self.get_response(request)
+
+        print(f"🔍 Authorization header: {auth}")
+        print(auth.startswith("Bearer "))
+        raw = auth.split()[1]
+        print("raw token:", raw)
         if auth.startswith("Bearer "):
             raw = auth.split()[1]
             print("raw token:", raw)
