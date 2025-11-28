@@ -6,8 +6,7 @@ from django.conf import settings
 from rest_framework_simplejwt.backends import TokenBackend
 from rest_framework_simplejwt.exceptions import TokenError
 from decouple import config
-print(config('DB_NAME'))
-print("my sql name")
+
 
 class TenantMiddleware:
     """
@@ -42,8 +41,10 @@ class TenantMiddleware:
 
         if auth.startswith("Bearer "):
             raw = auth.split()[1]
+            print("raw token:", raw)
             try:
                 payload = self.token_backend.decode(raw)
+                print("decoded JWT payload:", payload)
                 company_id = payload.get("company_id")
                 print(f"🔑 JWT decoded - company_id: {company_id}")
             except TokenError as e:
