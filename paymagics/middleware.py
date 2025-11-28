@@ -28,9 +28,6 @@ class TenantMiddleware:
         )
 
     def __call__(self, request):
-        if request.path == "/api/migrate/":
-            print("⚙️ Middleware bypass for /api/migrate/")
-            return self.get_response(request)
         # 1) Admin pages and login endpoint must use default MySQL database
         login_paths = ["/api/admin/login", "/api/admin/login/"]
         # if request.path in login_paths or request.path.startswith("/admin"):
