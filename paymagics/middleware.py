@@ -30,11 +30,15 @@ class TenantMiddleware:
     def __call__(self, request):
         # 1) Admin pages and login endpoint must use default MySQL database
         login_paths = ["/api/admin/login", "/api/admin/login/"]
-        if request.path in login_paths or request.path.startswith("/admin"):
+        # if request.path in login_paths or request.path.startswith("/admin"):
+        if request.path.startswith("/admin/") or request.path.startswith("/admin_dash/login/"):
             print("🔐 HR Login/Admin → forcing MySQL default DB")
             self._switch_to_mysql_default()
             return self.get_response(request)
-
+        print("===========")
+        print(request.path)
+        print(request.Meta)
+        print(request.Meta.get("HTTP_AUTHORIZATION", ""))
         # 2) Extract & decode raw JWT for API requests
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         company_id = None
