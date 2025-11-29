@@ -37,20 +37,10 @@ class TenantMiddleware:
             print("🔐 HR Login/Admin → forcing MySQL default DB")
             self._switch_to_mysql_default()
             return self.get_response(request)
-        print("===========")
-        print(request.path)
-        print(request.META)
-        error_stream = request.META.get("wsgi.errors")
-        print(error_stream)
-        print(request.META.get("HTTP_AUTHORIZATION", ""))
+        
         # 2) Extract & decode raw JWT for API requests
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         company_id = None
-
-        print(f"🔍 Authorization header: {auth}")
-        # print(auth.startswith("Bearer "))
-        # raw = auth.split()[1]
-        # print("raw token:", raw)
         if auth.startswith("Bearer "):
             raw = auth.split()[1]
             print("raw token:", raw)
