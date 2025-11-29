@@ -46,7 +46,7 @@ class TenantMiddleware:
             print("raw token:", raw)
             try:
                 payload = self.token_backend.decode(raw)
-                print("decoded JWT payload:", payload)
+               
                 company_id = payload.get("company_id")
                 print(f"🔑 JWT decoded - company_id: {company_id}")
             except TokenError as e:
@@ -132,13 +132,15 @@ class TenantMiddleware:
         """
         Switch to original MySQL configuration for HireMagics standalone
         """
+        print("🔐 Switching to MySQL default database configuration")
+        print(config("DB_ENGINE"))
         original_default = {
             "ENGINE": config("DB_ENGINE"),
             "NAME": config("DB_NAME"),
             "USER": config("DB_USER"),
             "PASSWORD": config("DB_PASSWORD"),
-            "HOST": config("DB_HOST", default="localhost"),
-            "PORT": config("DB_PORT", default="3306"),
+            "HOST": config("DB_HOST"),
+            "PORT": config("DB_PORT"),
             "OPTIONS": {
                 "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
             },
