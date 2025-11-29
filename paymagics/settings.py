@@ -196,9 +196,9 @@ REDIS_PORT = config("REDIS_PORT", default="6379")
 
 
 if REDIS_PASSWORD:
-    REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/1"
+    REDIS_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/3"
 else:
-    REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
+    REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/3"
 
 
 CACHES = {
