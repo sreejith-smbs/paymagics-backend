@@ -16,12 +16,11 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 ALLOWED_HOSTS = [
-    '35.154.70.132', 
-    'localhost', 
-    '127.0.0.1', 
-    'api.paymagics.com', 
-    'paymagics.com'
-    'paymagics-frontend.vercel.app'
+    "api.paymagics.com",
+    "paymagics.com",
+    "127.0.0.1",
+    "localhost",
+    "35.154.70.132",
 ]
 
 
@@ -32,6 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
 
     # Third Party Apps
     'corsheaders',
@@ -53,31 +53,44 @@ MODULE_API_KEY = config('MODULE_API_KEY')
 
 
 MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "paymagics.middleware.TenantMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
+
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+MIDDLEWARE.insert(0, 'paymagics.middleware.TenantMiddleware')
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite default
     "http://127.0.0.1:5173",
     "http://localhost:3001",
     "http://localhost:3000",
-    "https://paymagics-frontend.vercel.app",
     'http://192.168.29.28:3000',
+    "https://paymagics-frontend.vercel.app",
+]
+
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "origin",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-api-key",
 ]
 CSRF_TRUSTED_ORIGINS = [
     "https://paymagics-frontend.vercel.app",
     "https://api.paymagics.com",
 ]
-
-CORS_ALLOW_CREDENTIALS = True
 
 ROOT_URLCONF = 'paymagics.urls'
 
