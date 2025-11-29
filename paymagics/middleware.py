@@ -48,7 +48,7 @@ class TenantMiddleware:
         # print(f"🔍 Authorization header: {auth}")
         # print(auth.startswith("Bearer "))
         # raw = auth.split()[1]
-        print("raw token:", raw)
+        # print("raw token:", raw)
         if auth.startswith("Bearer "):
             raw = auth.split()[1]
             print("raw token:", raw)

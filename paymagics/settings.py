@@ -65,28 +65,18 @@ MIDDLEWARE = [
 ]
 MIDDLEWARE.insert(0, 'paymagics.middleware.TenantMiddleware')
 
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:5173",  # Vite default
+#     "http://127.0.0.1:5173",
+#     "http://localhost:3001",
+#     "http://localhost:3000",
+#     'http://192.168.29.28:3000',
+#     "https://paymagics-frontend.vercel.app",
+# ]
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # Vite default
-    "http://127.0.0.1:5173",
-    "http://localhost:3001",
-    "http://localhost:3000",
-    'http://192.168.29.28:3000',
     "https://paymagics-frontend.vercel.app",
 ]
 
-
-CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOW_HEADERS = [
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",
-    "origin",
-    "x-csrftoken",
-    "x-requested-with",
-    "x-api-key",
-]
 CSRF_TRUSTED_ORIGINS = [
     "https://paymagics-frontend.vercel.app",
     "https://api.paymagics.com",
