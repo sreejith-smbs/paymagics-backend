@@ -45,9 +45,9 @@ class TenantMiddleware:
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         company_id = None
 
-        print(f"🔍 Authorization header: {auth}")
-        print(auth.startswith("Bearer "))
-        raw = auth.split()[1]
+        # print(f"🔍 Authorization header: {auth}")
+        # print(auth.startswith("Bearer "))
+        # raw = auth.split()[1]
         print("raw token:", raw)
         if auth.startswith("Bearer "):
             raw = auth.split()[1]
