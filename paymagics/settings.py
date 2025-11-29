@@ -21,6 +21,7 @@ ALLOWED_HOSTS = [
     '127.0.0.1', 
     'api.paymagics.com', 
     'paymagics.com'
+    'paymagics-frontend.vercel.app'
 ]
 
 
@@ -70,6 +71,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://paymagics-frontend.vercel.app",
     'http://192.168.29.28:3000',
+]
+CSRF_TRUSTED_ORIGINS = [
+    "https://paymagics-frontend.vercel.app",
+    "https://api.paymagics.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
