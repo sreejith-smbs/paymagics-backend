@@ -234,8 +234,6 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
     'max_retries': 3,
 }
 
-CORS_ALLOW_ALL_ORIGINS = True 
-
 # CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
