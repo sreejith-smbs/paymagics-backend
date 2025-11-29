@@ -22,16 +22,18 @@ class TenantMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         from rest_framework_simplejwt.settings import api_settings
+
         self.token_backend = TokenBackend(
-            api_settings.ALGORITHM,
-            signing_key=settings.SIMPLE_JWT['SIGNING_KEY']
+            api_settings.ALGORITHM, signing_key=settings.SIMPLE_JWT["SIGNING_KEY"]
         )
 
     def __call__(self, request):
         # 1) Admin pages and login endpoint must use default MySQL database
         login_paths = ["/api/admin/login", "/api/admin/login/"]
         # if request.path in login_paths or request.path.startswith("/admin"):
-        if request.path.startswith("/admin/") or request.path.startswith("/admin_dash/login/"):
+        if request.path.startswith("/admin/") or request.path.startswith(
+            "/admin_dash/login/"
+        ):
             print("🔐 HR Login/Admin → forcing MySQL default DB")
             self._switch_to_mysql_default()
             return self.get_response(request)
@@ -45,7 +47,7 @@ class TenantMiddleware:
         auth = request.META.get("HTTP_AUTHORIZATION", "")
         company_id = None
 
-        # print(f"🔍 Authorization header: {auth}")
+        print(f"🔍 Authorization header: {auth}")
         # print(auth.startswith("Bearer "))
         # raw = auth.split()[1]
         # print("raw token:", raw)
@@ -101,14 +103,16 @@ class TenantMiddleware:
             print(f"🔄 Switching to tenant database: {cfg['NAME']}")
 
             # Add ALL required Django database config keys
-            cfg.update({
-                'ATOMIC_REQUESTS': False,
-                'AUTOCOMMIT': True,
-                'CONN_MAX_AGE': 0,
-                'CONN_HEALTH_CHECKS': False,
-                'TIME_ZONE': None,
-                'TEST': {},
-            })
+            cfg.update(
+                {
+                    "ATOMIC_REQUESTS": False,
+                    "AUTOCOMMIT": True,
+                    "CONN_MAX_AGE": 0,
+                    "CONN_HEALTH_CHECKS": False,
+                    "TIME_ZONE": None,
+                    "TEST": {},
+                }
+            )
 
             # COMPLETE REPLACEMENT - not update
             connections.databases["default"] = cfg
@@ -117,7 +121,7 @@ class TenantMiddleware:
             close_old_connections()
 
             # Clear connection in thread-local storage
-            if hasattr(connections._connections, 'default'):
+            if hasattr(connections._connections, "default"):
                 del connections._connections.default
 
             # Handle schema/database based on database type
@@ -139,28 +143,28 @@ class TenantMiddleware:
         Switch to original MySQL configuration for HireMagics standalone
         """
         original_default = {
-            'ENGINE': config('DB_ENGINE'),
-            'NAME': config('DB_NAME'),
-            'USER': config('DB_USER'),
-            'PASSWORD': config('DB_PASSWORD'),
-            'HOST': config('DB_HOST', default='localhost'),
-            'PORT': config('DB_PORT', default='3306'),
-            'OPTIONS': {
-                'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            "ENGINE": config("DB_ENGINE"),
+            "NAME": config("DB_NAME"),
+            "USER": config("DB_USER"),
+            "PASSWORD": config("DB_PASSWORD"),
+            "HOST": config("DB_HOST", default="localhost"),
+            "PORT": config("DB_PORT", default="3306"),
+            "OPTIONS": {
+                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
             },
-            'ATOMIC_REQUESTS': False,
-            'AUTOCOMMIT': True,
-            'CONN_MAX_AGE': 0,
-            'CONN_HEALTH_CHECKS': False,
-            'TIME_ZONE': None,
-            'TEST': {},
+            "ATOMIC_REQUESTS": False,
+            "AUTOCOMMIT": True,
+            "CONN_MAX_AGE": 0,
+            "CONN_HEALTH_CHECKS": False,
+            "TIME_ZONE": None,
+            "TEST": {},
         }
         # Complete replacement of database config
         connections.databases["default"] = original_default
         # Force close all connections
         close_old_connections()
         # Clear connection in thread-local storage
-        if hasattr(connections._connections, 'default'):
+        if hasattr(connections._connections, "default"):
             del connections._connections.default
         print(f"✓ Switched to MySQL default: {original_default['NAME']}")
 
@@ -178,8 +182,10 @@ class TenantMiddleware:
 
                 if data and len(data) > 0:
                     db_config = data[0]
-                    print(db_config['name'])
-                    print(f"📦 API Response - DB: {db_config.get('name')}, Host: {db_config.get('host')}")
+                    print(db_config["name"])
+                    print(
+                        f"📦 API Response - DB: {db_config.get('name')}, Host: {db_config.get('host')}"
+                    )
 
                     # Create PostgreSQL configuration
                     cfg = {
@@ -191,7 +197,7 @@ class TenantMiddleware:
                         "PORT": db_config["port"],
                         "OPTIONS": {
                             "connect_timeout": 10,
-                        }
+                        },
                     }
                     return cfg
                 else:
@@ -201,8 +207,6 @@ class TenantMiddleware:
         except Exception as e:
             print(f"❌ BossMagics API call failed: {type(e).__name__}: {e}")
             return None
-
-
 
     def _set_postgresql_schema(self, schema):
         """
