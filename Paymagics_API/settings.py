@@ -53,10 +53,10 @@ REST_FRAMEWORK = {
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    "django.middleware.common.CommonMiddleware",
+    # "django.middleware.common.CommonMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    # 'django.middleware.common.CommonMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -70,14 +70,20 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "https://paymagics-frontend.vercel.app",
     "http://192.168.29.28:3000",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://paymagics-frontend.vercel.app",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173"
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
 
+
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "authorization",
+    "content-type",
+]
 
 CORS_ALLOW_CREDENTIALS = True
 
