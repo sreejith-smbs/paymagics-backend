@@ -56,7 +56,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
+    # 'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -69,10 +69,15 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3001",
     "http://localhost:3000",
     "https://paymagics-frontend.vercel.app",
-    'http://192.168.29.28:3000',
-    'http://localhost:3000',
-    'https://paymagics-frontend.vercel.app'
+    "http://192.168.29.28:3000",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://paymagics-frontend.vercel.app",
 ]
+
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+
 
 CORS_ALLOW_CREDENTIALS = True
 
