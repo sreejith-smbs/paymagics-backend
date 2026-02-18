@@ -71,7 +71,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://paymagics-frontend.vercel.app",
     "http://192.168.29.28:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:5173"
+    "http://localhost:5173",
+    "https://brandmagics-paymagicsfrontend-brmz.vercel.app",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
